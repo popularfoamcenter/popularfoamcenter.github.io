@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "297012917075",
+    "project_id": "popularfoamcenter-886ad",
+    "storage_bucket": "popularfoamcenter-886ad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:297012917075:android:43288f40fa6aa8cd21a7a6",
+        "android_client_info": {
+          "package_name": "com.rajarehman.dev.pfc"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAentqhzKLMwjw3QLAYldj9sWErjllCVEA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
