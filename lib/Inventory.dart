@@ -404,81 +404,181 @@ class _InventoryPageState extends State<InventoryPage> {
     final TextEditingController purchaseController = TextEditingController(text: item['purchasePrice'].toString());
     final TextEditingController saleController = TextEditingController(text: item['salePrice'].toString());
     final TextEditingController stockController = TextEditingController(text: item['stockQuantity'].toString());
+    final TextEditingController lengthController = TextEditingController(text: item['length'].toString());
+    final TextEditingController widthController = TextEditingController(text: item['width'].toString());
+    final TextEditingController heightController = TextEditingController(text: item['height'].toString());
+
+    String? selectedCovered = item['covered'];
+    String? selectedPackagingUnit = item['packagingUnit'];
+    String? selectedQualityId = item['qualityId'];
+    String? selectedQualityName = item['qualityName'];
+
+    final _formKey = GlobalKey<FormState>();
 
     await showDialog(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: _surfaceColor,
-        insetPadding: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: _surfaceColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Edit Item',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: nameController,
-                decoration: _inputDecoration('Item Name'),
-                style: const TextStyle(color: _textColor),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: purchaseController,
-                decoration: _inputDecoration('Purchase Price'),
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: _textColor),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: saleController,
-                decoration: _inputDecoration('Sale Price'),
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: _textColor),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: stockController,
-                decoration: _inputDecoration('Stock Quantity'),
-                keyboardType: TextInputType.number,
-                style: const TextStyle(color: _textColor),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryColor,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return Dialog(
+            backgroundColor: _surfaceColor,
+            insetPadding: const EdgeInsets.all(24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: SingleChildScrollView( // Wrap the content in a SingleChildScrollView
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: _surfaceColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
                 ),
-                onPressed: () async {
-                  await FirebaseFirestore.instance
-                      .collection('items')
-                      .doc(item.id)
-                      .update({
-                    'itemName': nameController.text,
-                    'purchasePrice': double.parse(purchaseController.text),
-                    'salePrice': double.parse(saleController.text),
-                    'stockQuantity': int.parse(stockController.text),
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Item updated successfully')),
-                  );
-                },
-                child: const Text('UPDATE', style: TextStyle(color: _surfaceColor)),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('Edit Item',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+                      const SizedBox(height: 20),
+                      // Covered Dropdown
+                      DropdownButtonFormField<String>(
+                        value: selectedCovered,
+                        decoration: _inputDecoration('Covered Option'),
+                        items: const [
+                          DropdownMenuItem(value: "Yes", child: Text("Covered")),
+                          DropdownMenuItem(value: "-", child: Text("Uncovered")),
+                        ],
+                        onChanged: (value) => setState(() => selectedCovered = value),
+                        validator: (value) => value == null ? 'Required field' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      // Quality Dropdown
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance.collection('qualities').snapshots(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const CircularProgressIndicator(color: _primaryColor);
+                          }
+                          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                            return const Text('No qualities available', style: TextStyle(color: _textColor));
+                          }
+                          final qualities = snapshot.data!.docs;
+                          return DropdownButtonFormField<String>(
+                            value: selectedQualityId,
+                            decoration: _inputDecoration('Quality'),
+                            items: qualities.map((quality) {
+                              return DropdownMenuItem<String>(
+                                value: quality.id,
+                                child: Text(quality['name'], style: const TextStyle(color: _textColor)),
+                              );
+                            }).toList(),
+                            onChanged: (value) => setState(() {
+                              selectedQualityId = value;
+                              selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
+                            }),
+                            validator: (value) => value == null ? 'Required field' : null,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Packaging Unit Dropdown
+                      DropdownButtonFormField<String>(
+                        value: selectedPackagingUnit,
+                        decoration: _inputDecoration('Packaging Unit'),
+                        items: const [
+                          DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
+                          DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
+                          DropdownMenuItem(value: 'Kilograms', child: Text('Kilograms')),
+                          DropdownMenuItem(value: 'Dozen', child: Text('Dozen')),
+                          DropdownMenuItem(value: 'Grams', child: Text('Grams')),
+                        ],
+                        onChanged: (value) => setState(() => selectedPackagingUnit = value),
+                        validator: (value) => value == null ? 'Required field' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextFormField('Item Name', nameController),
+                      _buildTextFormField('Purchase Price', purchaseController, isNumeric: true),
+                      _buildTextFormField('Sale Price', saleController, isNumeric: true),
+                      _buildTextFormField('Stock Quantity', stockController, isNumeric: true),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(child: _buildDimensionField('Length', lengthController)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildDimensionField('Width', widthController)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildDimensionField('Height', heightController)),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          if (_formKey.currentState!.validate()) {
+                            await FirebaseFirestore.instance
+                                .collection('items')
+                                .doc(item.id)
+                                .update({
+                              'itemName': nameController.text,
+                              'purchasePrice': double.parse(purchaseController.text),
+                              'salePrice': double.parse(saleController.text),
+                              'stockQuantity': int.parse(stockController.text),
+                              'length': double.parse(lengthController.text),
+                              'width': double.parse(widthController.text),
+                              'height': double.parse(heightController.text),
+                              'covered': selectedCovered,
+                              'qualityId': selectedQualityId,
+                              'qualityName': selectedQualityName,
+                              'packagingUnit': selectedPackagingUnit,
+                            });
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Item updated successfully')),
+                            );
+                          }
+                        },
+                        child: const Text('UPDATE', style: TextStyle(color: _surfaceColor)),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
+    );
+  }
+
+  Widget _buildTextFormField(String label, TextEditingController controller, {bool isNumeric = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          style: const TextStyle(color: _textColor, fontSize: 14),
+          decoration: _inputDecoration(label),
+          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+          validator: (value) => value!.isEmpty ? 'Required field' : null,
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildDimensionField(String label, TextEditingController controller) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: TextInputType.number,
+      decoration: _inputDecoration(label),
+      style: const TextStyle(color: _textColor, fontSize: 14),
+      validator: (value) => value!.isEmpty ? 'Required field' : null,
     );
   }
 
