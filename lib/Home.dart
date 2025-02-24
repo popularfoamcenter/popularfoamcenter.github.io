@@ -51,7 +51,7 @@ class _HomePageState extends State<HomePage> {
     {'icon': Icons.edit_note_rounded, 'label': 'Ledger', 'page': const CompanyLedgerPage()},
     {'icon': Icons.attach_money, 'label': 'Cash Register', 'page': const CashRegisterPage()},
     {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage()},
-    {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': const InvoiceListScreen()},
+    {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': InvoiceListScreen()},
   ];
 
   void _setPage(Widget page, String label) {
