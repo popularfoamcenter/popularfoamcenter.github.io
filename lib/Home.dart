@@ -40,14 +40,16 @@ class _HomePageState extends State<HomePage> {
 
   final List<Map<String, dynamic>> _navigationItems = [
     {'icon': Icons.dashboard, 'label': 'Dashboard', 'page': Dashboard()},
-    {'icon': Icons.point_of_sale, 'label': 'Point of Sale', 'page': PointOfSalePage()},
     {'icon': Icons.inventory_2, 'label': 'Inventory', 'page': InventoryPage()},
+    {'icon': Icons.point_of_sale, 'label': 'Point of Sale', 'page': PointOfSalePage()},
+    {'icon': Icons.receipt_rounded, 'label': 'Invoices', 'page': TransactionsPage()},
+
     {'icon': Icons.people_alt, 'label': 'Customers', 'page': CustomerListPage()},
     {'icon': Icons.directions_bus, 'label': 'Vehicles', 'page': const VehiclesPage()},
     {'icon': Icons.grade, 'label': 'Quality', 'page': const QualityPage()},
     {'icon': Icons.business, 'label': 'Company', 'page': CompanyListPage()},
     {'icon': Icons.account_balance_sharp, 'label': 'Accounts', 'page': const AccountsPage()},
-    {'icon': Icons.receipt_rounded, 'label': 'Sale Invoices', 'page': InvoiceListPage()},
+
     {'icon': Icons.edit_note_rounded, 'label': 'Ledger', 'page': const CompanyLedgerPage()},
     {'icon': Icons.attach_money, 'label': 'Cash Register', 'page': const CashRegisterPage()},
     {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage()},

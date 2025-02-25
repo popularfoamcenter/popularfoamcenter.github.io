@@ -1,5 +1,5 @@
 name: pfc
-description: "Inventory management system by Raja Rehman Tanveer"
+description: "Inventory management system by Muhammad Usman"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -44,9 +44,10 @@ dependencies:
   flutter_svg:
   flutter_riverpod: ^2.3.6
   rxdart:
-  pdf:
+  pdf: ^3.11.3
   path_provider:
   file_saver:
+  uuid:
 
 dev_dependencies:
   flutter_test:

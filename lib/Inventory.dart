@@ -265,7 +265,7 @@ class _AddItemsState extends State<AddItems> {
     if (_formKey.currentState!.validate()) {
       try {
         await _items.add({
-          'itemName': _itemNameController.text,
+          'itemName': _itemNameController.text.trim(), // Trim whitespace
           'purchasePrice': double.parse(_purchasePriceController.text),
           'salePrice': double.parse(_salePriceController.text),
           'length': double.parse(_lengthController.text),
@@ -523,7 +523,7 @@ class _InventoryPageState extends State<InventoryPage> {
                                 .collection('items')
                                 .doc(item.id)
                                 .update({
-                              'itemName': nameController.text,
+                              'itemName': nameController.text.trim(),
                               'purchasePrice': double.parse(purchaseController.text),
                               'salePrice': double.parse(saleController.text),
                               'stockQuantity': int.parse(stockController.text),

@@ -37,7 +37,6 @@ class CustomerListPage extends StatefulWidget {
   @override
   _CustomerListPageState createState() => _CustomerListPageState();
 }
-
 class _CustomerListPageState extends State<CustomerListPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
@@ -255,6 +254,10 @@ class _CustomerListPageState extends State<CustomerListPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
+                    icon: Icon(Icons.edit, color: _primaryColor, size: 20),
+                    onPressed: () => _showEditCustomerDialog(document),
+                  ),
+                  IconButton(
                     icon: Icon(Icons.visibility_rounded, color: _primaryColor, size: 20),
                     onPressed: () => _navigateToDiscounts(context, document),
                   ),
@@ -295,6 +298,10 @@ class _CustomerListPageState extends State<CustomerListPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   IconButton(
+                    icon: Icon(Icons.edit, color: _primaryColor, size: 20),
+                    onPressed: () => _showEditCustomerDialog(document),
+                  ),
+                  IconButton(
                     icon: Icon(Icons.visibility_rounded, color: _primaryColor, size: 20),
                     onPressed: () => _navigateToDiscounts(context, document),
                   ),
@@ -324,10 +331,290 @@ class _CustomerListPageState extends State<CustomerListPage> {
     );
   }
 
+  void _showEditCustomerDialog(DocumentSnapshot customerDoc) {
+    final data = customerDoc.data() as Map<String, dynamic>;
+    final TextEditingController nameController = TextEditingController(text: data['name']);
+    final TextEditingController numberController = TextEditingController(text: data['number']);
+    final TextEditingController addressController = TextEditingController(text: data['address'] ?? '');
+    final TextEditingController balanceController = TextEditingController(
+      text: data['balanceAmount']?.toStringAsFixed(0) ?? '0',
+    );
+    String balanceType = data['balanceType'] ?? 'Credit';
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: _surfaceColor,
+        insetPadding: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Edit Customer',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: _textColor,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Customer Name
+                Text(
+                  'Customer Name',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: _textColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: nameController,
+                  decoration: _inputDecoration('Enter customer name'),
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  validator: (value) => value!.isEmpty ? 'Required field' : null,
+                ),
+                const SizedBox(height: 16),
+                // Contact Number
+                Text(
+                  'Contact Number',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: _textColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: numberController,
+                  decoration: _inputDecoration('Enter contact number'),
+                  keyboardType: TextInputType.phone,
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  validator: (value) => value!.isEmpty ? 'Required field' : null,
+                ),
+                const SizedBox(height: 16),
+                // Address
+                Text(
+                  'Address (Optional)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: _textColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: addressController,
+                  decoration: _inputDecoration('Enter address'),
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                // Balance Type
+                Text(
+                  'Balance Type',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: _textColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: balanceType,
+                  decoration: _inputDecoration('Select balance type'),
+                  dropdownColor: _surfaceColor,
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  items: ['Credit', 'Debit'].map((type) {
+                    return DropdownMenuItem<String>(
+                      value: type,
+                      child: Text(type, style: TextStyle(color: _textColor)),
+                    );
+                  }).toList(),
+                  onChanged: (value) => balanceType = value!,
+                ),
+                const SizedBox(height: 16),
+                // Balance Amount
+                Text(
+                  'Balance Amount',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: _textColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: balanceController,
+                  decoration: _inputDecoration('Enter balance amount'),
+                  keyboardType: TextInputType.number,
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  validator: (value) => value!.isEmpty ? 'Required field' : null,
+                ),
+                const SizedBox(height: 24),
+                // Save Button
+                ElevatedButton(
+                  onPressed: () async {
+                    if (nameController.text.isNotEmpty &&
+                        numberController.text.isNotEmpty &&
+                        balanceController.text.isNotEmpty) {
+                      await _updateCustomer(
+                        customerDoc.id,
+                        nameController.text,
+                        numberController.text,
+                        addressController.text,
+                        balanceType,
+                        double.parse(balanceController.text),
+                      );
+                      Navigator.pop(context);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text(
+                    'SAVE',
+                    style: TextStyle(fontSize: 14, color: _surfaceColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateCustomer(
+      String id,
+      String name,
+      String number,
+      String address,
+      String balanceType,
+      double balanceAmount,
+      ) async {
+    try {
+      await _firestore.collection('customers').doc(id).update({
+        'name': name,
+        'number': number,
+        'address': address,
+        'balanceType': balanceType,
+        'balanceAmount': balanceAmount,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Customer updated successfully!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error updating customer: $e')),
+      );
+    }
+  }
+
   Future<void> _deleteCustomer(String id) async {
-    await _firestore.collection('customers').doc(id).delete();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Customer deleted successfully!')),
+    final bool? confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: _surfaceColor,
+        insetPadding: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Delete Customer',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: _textColor)),
+              const SizedBox(height: 16),
+              Text('Are you sure you want to delete this customer? This action cannot be undone.',
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: _secondaryTextColor)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                    child: Text('CANCEL',
+                        style: TextStyle(
+                            color: _secondaryTextColor,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                    child: const Text('DELETE',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmDelete == true) {
+      try {
+        await _firestore.collection('customers').doc(id).delete();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Customer deleted successfully!')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting customer: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  InputDecoration _inputDecoration(String label) {
+    return InputDecoration(
+      filled: true,
+      fillColor: _surfaceColor,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      labelText: label,
+      labelStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
+      floatingLabelBehavior: FloatingLabelBehavior.never,
     );
   }
 }
