@@ -40,7 +40,7 @@ class CoverageProgressPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..shader = const LinearGradient(
-        colors: [_primaryColor, Color(0xFF4A90E2)],
+        colors: [_primaryColor, Color(0xFF4A90E2)], // Matching UI gradient
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(Rect.fromCircle(center: center, radius: radius));
@@ -633,9 +633,9 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    _buildSummaryCard(),
-                    const SizedBox(height: 24),
                     _buildInputPanel(),
+                    const SizedBox(height: 24),
+                    _buildSummaryCard(),
                   ],
                 ),
               ),
@@ -1050,9 +1050,9 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       key: _formKey,
                       child: Column(
                         children: [
-                          _buildSummaryCard(),
-                          const SizedBox(height: 24),
                           _buildInputPanel(),
+                          const SizedBox(height: 24),
+                          _buildSummaryCard(),
                         ],
                       ),
                     ),
