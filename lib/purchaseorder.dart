@@ -1,15 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 
-// Color Scheme
+// Color Scheme Matching Purchase Invoice
 const Color _primaryColor = Color(0xFF0D6EFD);
 const Color _textColor = Color(0xFF2D2D2D);
 const Color _secondaryTextColor = Color(0xFF4A4A4A);
 const Color _backgroundColor = Color(0xFFF8F9FA);
 const Color _surfaceColor = Colors.white;
 
+// Modern Coverage Progress Indicator with Animation
+class CoverageProgressPainter extends CustomPainter {
+  final double progress;
+  final Animation<double> animation;
+
+  CoverageProgressPainter({required this.progress, required this.animation}) : super(repaint: animation);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    const strokeWidth = 12.0;
+
+    // Background Circle (Subtle Gradient)
+    final backgroundPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..shader = LinearGradient(
+        colors: [Colors.grey[300]!, Colors.grey[500]!.withOpacity(0.5)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    canvas.drawCircle(center, radius, backgroundPaint);
+
+    // Animated Progress Arc (Modern Gradient)
+    final progressPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..shader = const LinearGradient(
+        colors: [_primaryColor, Color(0xFF4A90E2)],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+
+    final animatedProgress = progress * animation.value;
+    final sweepAngle = 2 * 3.14159 * animatedProgress.clamp(0.0, 1.0);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -3.14159 / 2,
+      sweepAngle,
+      false,
+      progressPaint,
+    );
+
+    // Inner Glow Effect (Modern Touch)
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth + 2
+      ..color = _primaryColor.withOpacity(0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -3.14159 / 2,
+      sweepAngle,
+      false,
+      glowPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(CoverageProgressPainter oldDelegate) => oldDelegate.progress != progress || oldDelegate.animation.value != animation.value;
+}
+
+// Purchase Orders List Screen
 class PurchaseOrdersPage extends StatefulWidget {
+  const PurchaseOrdersPage({super.key});
+
   @override
   _PurchaseOrdersPageState createState() => _PurchaseOrdersPageState();
 }
@@ -17,187 +85,125 @@ class PurchaseOrdersPage extends StatefulWidget {
 class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  final ScrollController _horizontalScrollController = ScrollController();
+  final double _mobileTableWidth = 1200;
 
   @override
   void dispose() {
     _searchController.dispose();
+    _horizontalScrollController.dispose();
     super.dispose();
   }
 
-  Widget _buildTableHeader() {
-    return Container(
-      height: 56,
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(
-        color: _primaryColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
-      ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(child: _HeaderText('Company')),
-            Expanded(child: _HeaderText('Vehicle')),
-            Expanded(child: _HeaderText('Date')),
-            Expanded(child: _HeaderText('Items')),
-            Expanded(child: _HeaderText('Total')),
-            Expanded(child: _HeaderText('Actions')),
-          ],
+  String _formatDate(dynamic dateValue) {
+    try {
+      DateTime date;
+      if (dateValue is Timestamp) date = dateValue.toDate();
+      else if (dateValue is String) date = DateTime.parse(dateValue);
+      else if (dateValue is DateTime) date = dateValue;
+      else date = DateTime.fromMillisecondsSinceEpoch(dateValue?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch);
+      return DateFormat('dd-MM-yyyy').format(date);
+    } catch (e) {
+      print('Error parsing date: $e');
+      return DateFormat('dd-MM-yyyy').format(DateTime.now());
+    }
+  }
+
+  void _viewOrder(DocumentSnapshot orderDoc) {
+    final order = orderDoc.data() as Map<String, dynamic>;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ViewPurchaseOrderPage.fromData(
+          orderId: orderDoc.id,
+          existingOrder: order,
+          vehicleSize: order['vehicle_size'] ?? 0,
         ),
       ),
     );
   }
 
-  Future<void> _showCompanyVehicleDialog(BuildContext context) async {
-    String? selectedCompany;
-    String? selectedVehicle;
-    int? selectedVehicleSize;
+  void _editOrder(DocumentSnapshot orderDoc) {
+    final order = orderDoc.data() as Map<String, dynamic>;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddPurchaseItemsPage(
+          companyName: order['company_name'] ?? '',
+          vehicleName: order['vehicle_name'] ?? '',
+          vehicleSize: order['vehicle_size'] is int ? order['vehicle_size'] : 0,
+          orderId: orderDoc.id,
+          existingOrder: order,
+        ),
+      ),
+    );
+  }
 
-    await showDialog(
+  Future<void> _deleteOrder(DocumentSnapshot orderDoc) async {
+    final bool? confirmDelete = await showDialog<bool>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return Dialog(
-            backgroundColor: _surfaceColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+      builder: (context) => Dialog(
+        backgroundColor: _surfaceColor,
+        insetPadding: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Confirm Delete', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+              const SizedBox(height: 20),
+              const Text('Are you sure you want to delete this order?', style: TextStyle(fontSize: 14, color: _secondaryTextColor)),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  const Text('Select Company & Vehicle', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 24),
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('companies').snapshots(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const CircularProgressIndicator();
-                      return DropdownButtonFormField<String>(
-                        decoration: _inputDecoration('Company'),
-                        dropdownColor: _surfaceColor,
-                        items: snapshot.data!.docs.map((doc) {
-                          return DropdownMenuItem<String>(
-                            value: doc['name'],
-                            child: Text(doc['name'], style: const TextStyle(color: _textColor)),
-                          );
-                        }).toList(),
-                        onChanged: (value) => selectedCompany = value,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance.collection('vehicles').snapshots(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const CircularProgressIndicator();
-                      return DropdownButtonFormField<String>(
-                        decoration: _inputDecoration('Vehicle'),
-                        dropdownColor: _surfaceColor,
-                        items: snapshot.data!.docs.map((doc) {
-                          return DropdownMenuItem<String>(
-                            value: doc['name'],
-                            child: Text(doc['name'], style: const TextStyle(color: _textColor)),
-                            onTap: () => selectedVehicleSize = doc['size'],
-                          );
-                        }).toList(),
-                        onChanged: (value) => selectedVehicle = value,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel', style: TextStyle(color: _secondaryTextColor)),
-                      ),
-                      const SizedBox(width: 16),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryColor,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        ),
-                        onPressed: () {
-                          if (selectedCompany != null && selectedVehicle != null) {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => AddPurchaseItemsPage(
-                                  companyName: selectedCompany!,
-                                  vehicleName: selectedVehicle!,
-                                  vehicleSize: selectedVehicleSize!,
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        child: const Text('Proceed', style: TextStyle(color: _surfaceColor)),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _deleteOrder(String id) async {
-    await FirebaseFirestore.instance.collection('purchase_orders').doc(id).delete();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Order deleted successfully!')),
-    );
-  }
-
-  Widget _buildOrderRow(DocumentSnapshot order) {
-    final data = order.data() as Map<String, dynamic>;
-    return Container(
-      height: 56,
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(child: _buildRowText(data['company_name'])),
-            Expanded(child: _buildRowText(data['vehicle_name'])),
-            Expanded(child: _buildRowText(data['order_date'])),
-            Expanded(child: _buildRowText(data['total_quantity'].toString())),
-            Expanded(child: _buildRowText(data['total_after_tax'].toStringAsFixed(0))),
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.visibility, color: _primaryColor, size: 20),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => ViewPurchaseOrderPage(orderId: order.id)),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
+                    child: const Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    onPressed: () => _deleteOrder(order.id),
+                  const SizedBox(width: 16),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Delete', style: TextStyle(color: _surfaceColor, fontSize: 14)),
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+
+    if (confirmDelete == true) {
+      try {
+        await FirebaseFirestore.instance.collection('purchase_orders').doc(orderDoc.id).delete();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order deleted successfully!')));
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error deleting order: $e')));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isDesktop = MediaQuery.of(context).size.width >= 1200;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Purchase Orders', style: TextStyle(color: _textColor)),
@@ -219,43 +225,128 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
             ),
           ),
           const SizedBox(height: 8),
-          _buildTableHeader(),
-          const SizedBox(height: 8),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator(color: _primaryColor));
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
-                }
-
-                final orders = snapshot.data?.docs.where((doc) {
-                  final companyName = doc['company_name'].toString().toLowerCase();
-                  return companyName.contains(_searchQuery);
-                }).toList();
-
-                if (orders == null || orders.isEmpty) {
-                  return Center(child: Text('No orders found', style: const TextStyle(color: _textColor)));
-                }
-
-                return ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemCount: orders.length,
-                  itemBuilder: (context, index) => _buildOrderRow(orders[index]),
-                );
-              },
-            ),
-          ),
+          Expanded(child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout()),
         ],
       ),
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildDesktopLayout() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: _primaryColor));
+        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
+
+        final orders = snapshot.data?.docs.where((doc) => (doc['company_name'] as String? ?? '').toLowerCase().contains(_searchQuery)).toList() ?? [];
+        if (orders.isEmpty) return const Center(child: Text('No orders found', style: TextStyle(color: _textColor)));
+
+        return Column(
+          children: [
+            _buildDesktopHeader(),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemCount: orders.length,
+                itemBuilder: (context, index) => _buildDesktopRow(orders[index]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Scrollbar(
+      controller: _horizontalScrollController,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _horizontalScrollController,
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: _mobileTableWidth,
+          child: Column(
+            children: [
+              _buildMobileHeader(),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: _primaryColor));
+                    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
+
+                    final orders = snapshot.data?.docs.where((doc) => (doc['company_name'] as String? ?? '').toLowerCase().contains(_searchQuery)).toList() ?? [];
+                    if (orders.isEmpty) return const Center(child: Text('No orders found', style: TextStyle(color: _textColor)));
+
+                    return ListView.separated(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemCount: orders.length,
+                      itemBuilder: (context, index) => _buildMobileRow(orders[index]),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopHeader() => Container(
+    height: 56,
+    margin: const EdgeInsets.symmetric(horizontal: 24),
+    decoration: BoxDecoration(
+      color: _primaryColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+    ),
+    child: const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Expanded(child: _HeaderCell('Company')),
+          Expanded(child: _HeaderCell('Vehicle')),
+          Expanded(child: _HeaderCell('Total')),
+          Expanded(child: _HeaderCell('Order Date')),
+          Expanded(child: _HeaderCell('Actions')),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildMobileHeader() => Container(
+    height: 56,
+    margin: const EdgeInsets.symmetric(horizontal: 24),
+    decoration: BoxDecoration(
+      color: _primaryColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+    ),
+    child: const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          _HeaderCell('Company', 200),
+          _HeaderCell('Vehicle', 200),
+          _HeaderCell('Total', 150),
+          _HeaderCell('Order Date', 150),
+          _HeaderCell('Actions', 150),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildDesktopRow(DocumentSnapshot orderDoc) {
+    final order = orderDoc.data() as Map<String, dynamic>;
+    final total = order['total_after_tax']?.toStringAsFixed(0) ?? '0';
+    final orderDate = _formatDate(order['order_date']);
+
     return Container(
       height: 56,
       decoration: BoxDecoration(
@@ -263,335 +354,290 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
       ),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search orders...',
-          filled: true,
-          fillColor: _surfaceColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          suffixIcon: IconButton(
-            icon: const Icon(Icons.clear, color: _secondaryTextColor),
-            onPressed: () => setState(() => _searchController.clear()),
-          ),
-          prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
-        ),
-        onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
-      ),
-    );
-  }
-
-  Widget _buildAddButton() {
-    return SizedBox(
-      height: 56,
-      child: ElevatedButton.icon(
-        icon: const Icon(Icons.add, size: 20, color: _surfaceColor),
-        label: const Text('Add Order', style: TextStyle(fontSize: 14, color: _surfaceColor)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _primaryColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-        ),
-        onPressed: () => _showCompanyVehicleDialog(context),
-      ),
-    );
-  }
-
-  Widget _buildRowText(String text) {
-    return Text(
-      text,
-      style: const TextStyle(color: _textColor, fontSize: 14),
-      textAlign: TextAlign.center,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
-
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: _secondaryTextColor),
-      filled: true,
-      fillColor: _surfaceColor,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _primaryColor),
-      ),
-    );
-  }
-}
-class _HeaderText extends StatelessWidget {
-  final String text;
-
-  const _HeaderText(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          text,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
-          overflow: TextOverflow.ellipsis,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Expanded(child: _DataCell(order['company_name'] ?? 'N/A')),
+            Expanded(child: _DataCell(order['vehicle_name'] ?? 'N/A')),
+            Expanded(child: _DataCell(total)),
+            Expanded(child: _DataCell(orderDate)),
+            Expanded(child: _ActionCell(orderDoc, null, onView: _viewOrder, onEdit: _editOrder, onDelete: _deleteOrder)),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildMobileRow(DocumentSnapshot orderDoc) {
+    final order = orderDoc.data() as Map<String, dynamic>;
+    final total = order['total_after_tax']?.toStringAsFixed(0) ?? '0';
+    final orderDate = _formatDate(order['order_date']);
+
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            _DataCell(order['company_name'] ?? 'N/A', 200),
+            _DataCell(order['vehicle_name'] ?? 'N/A', 200),
+            _DataCell(total, 150),
+            _DataCell(orderDate, 150),
+            _ActionCell(orderDoc, 150, onView: _viewOrder, onEdit: _editOrder, onDelete: _deleteOrder),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() => Container(
+    height: 56,
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+    ),
+    child: TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Search orders...',
+        filled: true,
+        fillColor: _surfaceColor,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        suffixIcon: IconButton(
+          icon: const Icon(Icons.clear, color: _secondaryTextColor),
+          onPressed: () {
+            _searchController.clear();
+            setState(() => _searchQuery = '');
+          },
+        ),
+        prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+      ),
+      onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+    ),
+  );
+
+  Widget _buildAddButton() => SizedBox(
+    height: 56,
+    child: ElevatedButton.icon(
+      icon: const Icon(Icons.add, size: 20, color: _surfaceColor),
+      label: const Text('Add Order', style: TextStyle(fontSize: 14, color: _surfaceColor)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _primaryColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      ),
+      onPressed: () => _showCompanyVehicleDialog(context),
+    ),
+  );
+
+  Future<void> _showCompanyVehicleDialog(BuildContext context) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => CompanyVehicleSelectionDialog(),
+    );
+
+    if (result != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AddPurchaseItemsPage(
+            companyName: result['company'],
+            vehicleName: result['vehicle'],
+            vehicleSize: result['vehicleSize'],
+          ),
+        ),
+      );
+    }
+  }
 }
+
+// Data Models
+class OrderItem {
+  final String itemId;
+  final String name;
+  final String quality;
+  final String packagingUnit;
+  int quantity;
+  double price;
+  double discount;
+  final String covered;
+  final int size;
+  int stockQuantity;
+
+  OrderItem({
+    required this.itemId,
+    required this.name,
+    required this.quality,
+    required this.packagingUnit,
+    required this.quantity,
+    required this.price,
+    required this.discount,
+    required this.covered,
+    required this.size,
+    this.stockQuantity = 0,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'itemId': itemId,
+    'name': name,
+    'quality': quality,
+    'packagingUnit': packagingUnit,
+    'quantity': quantity,
+    'price': price,
+    'discount': discount,
+    'covered': covered,
+    'size': size,
+    'total': quantity * price * (1 - discount / 100),
+  };
+}
+
+class Item {
+  final String id;
+  final String name;
+  final String quality;
+  final String packagingUnit;
+  final double purchasePrice;
+  final String covered;
+
+  Item({
+    required this.id,
+    required this.name,
+    required this.quality,
+    required this.packagingUnit,
+    required this.purchasePrice,
+    required this.covered,
+  });
+
+  factory Item.fromMap(Map<String, dynamic> map, String id) => Item(
+    id: id,
+    name: map['itemName'] ?? 'Unknown Item',
+    quality: map['qualityName'] ?? 'N/A',
+    packagingUnit: map['packagingUnit'] ?? 'Unit',
+    purchasePrice: (map['purchasePrice'] as num?)?.toDouble() ?? 0.0,
+    covered: map['covered']?.toString() ?? "No",
+  );
+}
+
+// View Purchase Order Page
 class ViewPurchaseOrderPage extends StatefulWidget {
   final String orderId;
+  final Map<String, dynamic> existingOrder;
+  final List<OrderItem> items;
+  final int vehicleSize;
 
-  const ViewPurchaseOrderPage({super.key, required this.orderId});
+  const ViewPurchaseOrderPage({super.key, required this.orderId, required this.existingOrder, required this.vehicleSize}) : items = const [];
+
+  factory ViewPurchaseOrderPage.fromData({required String orderId, required Map<String, dynamic> existingOrder, required int vehicleSize}) {
+    final itemsList = existingOrder['items'] as List<dynamic>? ?? [];
+    final items = itemsList.map((item) => OrderItem(
+      itemId: item['itemId'] ?? '',
+      name: item['name'] ?? 'Unknown',
+      quality: item['quality'] ?? 'N/A',
+      packagingUnit: item['packagingUnit'] ?? 'Unit',
+      quantity: item['quantity'] is int ? item['quantity'] : int.tryParse(item['quantity']?.toString() ?? '0') ?? 0,
+      price: (item['price'] as num?)?.toDouble() ?? 0.0,
+      discount: (item['discount'] as num?)?.toDouble() ?? 0.0,
+      covered: item['covered']?.toString() ?? "No",
+      size: item['size'] is int ? item['size'] : int.tryParse(item['size']?.toString() ?? '0') ?? 0,
+    )).toList();
+    return ViewPurchaseOrderPage._(orderId: orderId, existingOrder: existingOrder, items: items, vehicleSize: vehicleSize);
+  }
+
+  const ViewPurchaseOrderPage._({required this.orderId, required this.existingOrder, required this.items, required this.vehicleSize});
 
   @override
   _ViewPurchaseOrderPageState createState() => _ViewPurchaseOrderPageState();
 }
 
-class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> {
-  final TextEditingController _taxController = TextEditingController();
-  List<Map<String, dynamic>> _items = [];
-  double _subtotal = 0.0;
-  double _taxAmount = 0.0;
-  double _total = 0.0;
-  DocumentSnapshot? _orderSnapshot;
+class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
-    _loadOrder();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _controller.forward();
   }
 
-  Future<void> _loadOrder() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('purchase_orders')
-        .doc(widget.orderId)
-        .get();
-
-    if (snapshot.exists) {
-      setState(() {
-        _orderSnapshot = snapshot;
-        _items = List<Map<String, dynamic>>.from(snapshot['items']);
-        _taxController.text = snapshot['tax_percentage'].toString();
-        _calculateTotal();
-      });
-    }
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
-  void _calculateTotal() {
-    _subtotal = _items.fold(0.0, (sum, item) => sum + (item['total'] as num).toDouble());
-    final taxPercentage = double.tryParse(_taxController.text) ?? 0.0;
-    _taxAmount = _subtotal * (taxPercentage / 100);
-    _total = _subtotal + _taxAmount;
-  }
-
-  Future<void> _saveChanges() async {
+  String _formatDate(dynamic dateValue) {
     try {
-      await FirebaseFirestore.instance
-          .collection('purchase_orders')
-          .doc(widget.orderId)
-          .update({
-        'items': _items,
-        'tax_percentage': double.parse(_taxController.text),
-        'subtotal': _subtotal,
-        'tax_amount': _taxAmount,
-        'total_after_tax': _total,
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order updated successfully!')),
-      );
+      DateTime date;
+      if (dateValue is Timestamp) date = dateValue.toDate();
+      else if (dateValue is String) date = DateTime.parse(dateValue);
+      else if (dateValue is DateTime) date = dateValue;
+      else date = DateTime.fromMillisecondsSinceEpoch(dateValue?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch);
+      return DateFormat('dd-MM-yyyy').format(date);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating order: $e')),
-      );
+      print('Error parsing date: $e');
+      return DateFormat('dd-MM-yyyy').format(DateTime.now());
     }
-  }
-
-  Widget _buildEditableField(
-      Map<String, dynamic> item,
-      String field,
-      String suffix,
-      ) {
-    final controller = TextEditingController(
-      text: item[field].toString(),
-    );
-
-    return SizedBox(
-      width: 80,
-      child: TextFormField(
-        controller: controller,
-        keyboardType: TextInputType.number,
-        style: const TextStyle(color: Color(0xFFE9ECEF), fontSize: 14),
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: const Color(0xFF495057),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide.none,
-          ),
-          suffixText: suffix,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        ),
-        onChanged: (value) {
-          final newValue = double.tryParse(value) ?? item[field];
-          setState(() {
-            item[field] = newValue;
-            item['total'] = item['quantity'] * item['price'] * (1 - item['discount'] / 100);
-            _calculateTotal();
-          });
-        },
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_orderSnapshot == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    final order = _orderSnapshot!.data() as Map<String, dynamic>;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Order Details', style: TextStyle(color: Color(0xFFE9ECEF))),
-        backgroundColor: const Color(0xFF212529),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save, color: Color(0xFFE9ECEF)),
-            onPressed: _saveChanges,
-          ),
-        ],
+        backgroundColor: _backgroundColor,
+        title: const Text("View Purchase Order", style: TextStyle(color: _textColor)),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: _textColor),
       ),
-      backgroundColor: const Color(0xFFE9ECEF),
+      backgroundColor: _backgroundColor,
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
+        padding: const EdgeInsets.all(24.0),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF212529),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 6,
-                    offset: Offset(3, 3),
-                  ),
-                ],
-              ),
+            Expanded(
+              flex: 3,
               child: Column(
                 children: [
-                  _buildDetailRow('Company:', order['company_name']),
-                  _buildDetailRow('Vehicle:', order['vehicle_name']),
-                  _buildDetailRow('Order Date:', order['order_date']),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      const Text('Tax (%):', style: TextStyle(color: Color(0xFFE9ECEF))),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _taxController,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: Color(0xFFE9ECEF)),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            filled: true,
-                            fillColor: const Color(0xFF495057),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                          onChanged: (_) => _calculateTotal(),
-                        ),
-                      ),
-                    ],
+                  _buildItemsHeader(),
+                  const SizedBox(height: 16),
+                  Container(
+                    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                    child: ListView.separated(
+                      itemCount: widget.items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) => _buildItemRow(widget.items[index]),
+                    ),
                   ),
+                  if (widget.items.isEmpty)
+                    Container(
+                      height: 200,
+                      alignment: Alignment.center,
+                      child: const Text("No items", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
+                    ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            _buildTableHeader(),
+            const SizedBox(width: 24),
             Expanded(
-              child: ListView.builder(
-                itemCount: _items.length,
-                itemBuilder: (context, index) => Container(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF343A40),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          _items[index]['name'],
-                          style: const TextStyle(color: Color(0xFFE9ECEF), fontSize: 14),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      _buildEditableField(_items[index], 'quantity', ''),
-                      _buildEditableField(_items[index], 'price', ''),
-                      _buildEditableField(_items[index], 'discount', '%'),
-                      Expanded(
-                        child: Text(
-                          '\$${_items[index]['total'].toStringAsFixed(0)}',
-                          style: const TextStyle(color: Color(0xFFE9ECEF), fontSize: 14),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                        onPressed: () {
-                          setState(() {
-                            _items.removeAt(index);
-                            _calculateTotal();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
+              flex: 1,
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildSummaryCard(),
+                    const SizedBox(height: 24),
+                    _buildInputPanel(),
+                  ],
                 ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF212529),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildTotalRow('Subtotal:', _subtotal),
-                  _buildTotalRow('Tax:', _taxAmount),
-                  _buildTotalRow('Total:', _total),
-                ],
               ),
             ),
           ],
@@ -600,833 +646,990 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> {
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold)),
-          Text(value, style: const TextStyle(color: Color(0xFFE9ECEF))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTableHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF212529),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: const [
-          Expanded(
-            flex: 3,
-            child: Text('Item', style: TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-          ),
-          Expanded(child: Text('Qty', style: TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-          Expanded(child: Text('Price', style: TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-          Expanded(child: Text('Disc%', style: TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-          Expanded(child: Text('Total', style: TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-          Expanded(child: Text('Actions', style: TextStyle(color: Color(0xFFE9ECEF), fontWeight: FontWeight.bold), textAlign: TextAlign.center)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTotalRow(String label, double value) {
-    return Column(
+  Widget _buildItemsHeader() => Container(
+    height: 56,
+    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+    decoration: BoxDecoration(
+      color: _primaryColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+    ),
+    child: const Row(
       children: [
-        Text(label, style: const TextStyle(color: Color(0xFFADB5BD), fontSize: 14)),
-        Text('\$${value.toStringAsFixed(0)}', style: const TextStyle(color: Color(0xFFE9ECEF), fontSize: 16, fontWeight: FontWeight.bold)),
+        Expanded(flex: 2, child: Center(child: Text('Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 2, child: Center(child: Text('Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Cvrd', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Qty', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Price', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Disc%', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Total', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Stock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
       ],
-    );
-  }
+    ),
+  );
+
+  Widget _buildItemRow(OrderItem item) => Container(
+    height: 56,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+    ),
+    child: Row(
+      children: [
+        Expanded(flex: 2, child: Center(child: Text(item.quality, style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 2, child: Center(child: Text(item.name, style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(
+            flex: 1,
+            child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    item.covered,
+                    style: TextStyle(color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800], fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ))),
+        Expanded(flex: 1, child: Center(child: Text(item.quantity.toString(), style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text(item.price.toStringAsFixed(0), style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text(item.discount.toStringAsFixed(0), style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(
+            flex: 1,
+            child: Center(
+                child: Text(
+                  (item.quantity * item.price * (1 - item.discount / 100)).toStringAsFixed(0),
+                  style: const TextStyle(color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                ))),
+        Expanded(flex: 1, child: Center(child: Text(item.stockQuantity.toString(), style: const TextStyle(color: _textColor, fontSize: 14)))),
+      ],
+    ),
+  );
+
+  Widget _buildInputPanel() => Container(
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+    ),
+    child: Column(
+      children: [
+        _buildTextField('Company', widget.existingOrder['company_name'] ?? 'N/A'),
+        const SizedBox(height: 16),
+        _buildTextField('Vehicle', widget.existingOrder['vehicle_name'] ?? 'N/A'),
+        const SizedBox(height: 16),
+        _buildTextField('Order Date', _formatDate(widget.existingOrder['order_date'])),
+        const SizedBox(height: 16),
+        _buildTextField('Tax Percentage (%)', widget.existingOrder['tax_percentage']?.toString() ?? '0.0'),
+        const SizedBox(height: 16),
+        _buildTextField('Total Vehicle Size', widget.vehicleSize.toString()),
+      ],
+    ),
+  );
+
+  Widget _buildTextField(String label, String value) => TextFormField(
+    controller: TextEditingController(text: value),
+    readOnly: true,
+    style: const TextStyle(color: _textColor, fontSize: 14),
+    decoration: InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: _backgroundColor,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      labelStyle: const TextStyle(color: _secondaryTextColor),
+    ),
+  );
+
+  Widget _buildSummaryCard() => Container(
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 24, spreadRadius: 2)],
+    ),
+    child: Column(
+      children: [
+        SizedBox(
+          width: 100,
+          height: 100,
+          child: CustomPaint(
+            painter: CoverageProgressPainter(
+              progress: widget.vehicleSize > 0 ? widget.items.fold(0, (sum, item) => sum + item.size * item.quantity) / widget.vehicleSize : 0.0,
+              animation: _animation,
+            ),
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _animation,
+                builder: (context, child) {
+                  final animatedProgress = (widget.vehicleSize > 0 ? widget.items.fold(0, (sum, item) => sum + item.size * item.quantity) / widget.vehicleSize : 0.0) * _animation.value;
+                  return Text(
+                    widget.vehicleSize > 0 ? '${(animatedProgress * 100).toStringAsFixed(0)}%' : '0%',
+                    style: const TextStyle(color: _textColor, fontSize: 20, fontWeight: FontWeight.bold),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildSummaryItem('Covered Items', widget.items.where((item) => item.covered.toLowerCase() == 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
+        _buildSummaryItem('Uncovered Items', widget.items.where((item) => item.covered.toLowerCase() != 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
+        _buildSummaryItem('Total Items', widget.items.fold(0, (sum, item) => sum + item.quantity).toString()),
+        const Divider(),
+        _buildSummaryItem('Subtotal', '${widget.existingOrder['subtotal']?.toStringAsFixed(0) ?? '0'}/-'),
+        _buildSummaryItem('Tax', '${widget.existingOrder['tax_amount']?.toStringAsFixed(0) ?? '0'}/-'),
+        const Divider(),
+        _buildSummaryItem('Total', '${widget.existingOrder['total_after_tax']?.toStringAsFixed(0) ?? '0'}/-', valueStyle: const TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+      ],
+    ),
+  );
+
+  Widget _buildSummaryItem(String label, String value, {TextStyle? valueStyle}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: _secondaryTextColor)),
+        Text(value, style: valueStyle ?? const TextStyle(color: _textColor)),
+      ],
+    ),
+  );
 }
 
+// Add/Edit Purchase Items Page
 class AddPurchaseItemsPage extends StatefulWidget {
   final String companyName;
   final String vehicleName;
   final int vehicleSize;
+  final String? orderId;
+  final Map<String, dynamic>? existingOrder;
 
-  const AddPurchaseItemsPage({
-    Key? key,
-    required this.companyName,
-    required this.vehicleName,
-    required this.vehicleSize,
-  }) : super(key: key);
+  const AddPurchaseItemsPage({Key? key, required this.companyName, required this.vehicleName, required this.vehicleSize, this.orderId, this.existingOrder}) : super(key: key);
 
   @override
-  State<AddPurchaseItemsPage> createState() => _AddPurchaseItemsPageState();
+  _AddPurchaseItemsPageState createState() => _AddPurchaseItemsPageState();
 }
 
-class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> {
-  final TextEditingController _dateController = TextEditingController();
+class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with SingleTickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final List<OrderItem> _items = [];
+  double _subtotal = 0.0;
+  double _total = 0.0;
+  final TextEditingController _orderDateController = TextEditingController();
   final TextEditingController _taxController = TextEditingController();
-  final List<Map<String, dynamic>> addedItems = [];
-  int totalQuantity = 0;
-  int totalOccupiedSpace = 0;
-  int totalOrderValue = 0;
-  double taxPercentage = 0.0;
+  final ScrollController _itemsScrollController = ScrollController();
+  int? _selectedItemIndex;
+  bool _isLoading = false;
+  late AnimationController _controller;
+  late Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
-    _dateController.text = _formatDate(DateTime.now());
-    _taxController.text = '0.5';
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    if (widget.existingOrder != null) _initializeExistingOrder();
+    else {
+      _orderDateController.text = DateFormat('dd-MM-yyyy').format(DateTime.now());
+      _taxController.text = '0.5';
+    }
+    _controller.forward();
   }
 
-  String _formatDate(DateTime date) {
-    return DateFormat('d MMMM y').format(date);
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
-  Widget _buildTableHeader() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12.0),
-      decoration: BoxDecoration(
-        color: const Color(0xFF212529),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: Row(
-          children: [
-            // Item Name (flex: 3)
-            Expanded(
-              flex: 3,
-              child: _buildHeaderCell('Item'),
-            ),
-            // Quantity (flex: 1)
-            Expanded(
-              flex: 1,
-              child: _buildHeaderCell('Qty'),
-            ),
-            // Price (flex: 1)
-            Expanded(
-              flex: 1,
-              child: _buildHeaderCell('Price'),
-            ),
-            // Discount (flex: 1)
-            Expanded(
-              flex: 1,
-              child: _buildHeaderCell('Discount'),
-            ),
-            // Total (flex: 1)
-            Expanded(
-              flex: 1,
-              child: _buildHeaderCell('Total'),
-            ),
-            // Packaging Unit (flex: 1)
-            Expanded(
-              flex: 1,
-              child: _buildHeaderCell('Packaging Unit'),
-            ),
-            // Status (flex: 1)
-            Expanded(
-              flex: 1,
-              child: _buildHeaderCell('Cvrd'),
-            ),
-            // Actions (flex: 0)
-            Expanded(
-              flex: 0,
-              child: _buildHeaderCell('Actions'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Future<void> _initializeExistingOrder() async {
+    setState(() => _isLoading = true);
+    final order = widget.existingOrder!;
+    _orderDateController.text = _formatDate(order['order_date'] ?? DateTime.now());
+    _taxController.text = order['tax_percentage']?.toString() ?? '0.5';
 
-  Widget _buildHeaderCell(String text, {int flex = 1}) {
-    return Expanded(
-      flex: flex, // Use the flex parameter here
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFFE9ECEF),
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFormField({
-    required TextEditingController controller,
-    bool isDate = false,
-    bool isTax = false,
-  }) {
-    return TextFormField(
-      controller: controller,
-      style: const TextStyle(color: Color(0xFFE9ECEF)),
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: const Color(0xFF495057),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        suffixIcon: isDate
-            ? const Icon(Icons.calendar_today, size: 20, color: Color(0xFFE9ECEF))
-            : null,
-        suffixText: isTax ? '%' : null,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      ),
-      readOnly: isDate,
-      keyboardType: isTax ? TextInputType.number : null,
-      onTap: isDate ? () async {
-        final date = await showDatePicker(
-          context: context,
-          initialDate: DateTime.now(),
-          firstDate: DateTime(2000),
-          lastDate: DateTime(2100),
+    final itemsList = order['items'] as List<dynamic>? ?? [];
+    for (var item in itemsList) {
+      try {
+        final orderItem = OrderItem(
+          itemId: item['itemId'] ?? '',
+          name: item['name'] ?? 'Unknown',
+          quality: item['quality'] ?? 'N/A',
+          packagingUnit: item['packagingUnit'] ?? 'Unit',
+          quantity: item['quantity'] is int ? item['quantity'] : int.tryParse(item['quantity']?.toString() ?? '0') ?? 0,
+          price: (item['price'] as num?)?.toDouble() ?? 0.0,
+          discount: (item['discount'] as num?)?.toDouble() ?? 0.0,
+          covered: item['covered']?.toString() ?? "No",
+          size: item['size'] is int ? item['size'] : int.tryParse(item['size']?.toString() ?? '0') ?? 0,
         );
-        if (date != null) {
-          setState(() => _dateController.text = _formatDate(date));
-        }
-      } : null,
-      onChanged: isTax ? (value) {
-        setState(() => taxPercentage = double.tryParse(value) ?? 0.0);
-      } : null,
-    );
+        orderItem.stockQuantity = await _fetchStockQuantity(orderItem.itemId);
+        _items.add(orderItem);
+      } catch (e) {
+        print('Error initializing item: $e');
+      }
+    }
+
+    setState(() {
+      _calculateTotal();
+      _isLoading = false;
+    });
   }
 
-  Future<void> _showItemSelectionDialog() async {
+  String _formatDate(dynamic dateValue) {
     try {
-      final items = await FirebaseFirestore.instance.collection('items').get();
-
-      // Sort items by qualityName + itemName
-      final sortedItems = items.docs.map((doc) => doc).toList()
-        ..sort((a, b) {
-          final aData = a.data() as Map<String, dynamic>;
-          final bData = b.data() as Map<String, dynamic>;
-          final qualityCompare = (aData['qualityName']?.toString().toLowerCase() ?? '')
-              .compareTo(bData['qualityName']?.toString().toLowerCase() ?? '');
-          if (qualityCompare != 0) return qualityCompare;
-          return (aData['itemName']?.toString().toLowerCase() ?? '')
-              .compareTo(bData['itemName']?.toString().toLowerCase() ?? '');
-        });
-
-      showDialog(
-        context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setState) {
-            String searchQuery = '';
-            List<DocumentSnapshot> filteredItems = sortedItems;
-
-            return Dialog(
-              backgroundColor: const Color(0xFFE9ECEF),
-              insetPadding: const EdgeInsets.all(20),
-              child: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.9,
-                height: MediaQuery.of(context).size.height * 0.8,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: TextField(
-                        onChanged: (value) {
-                          final query = value.trim().toLowerCase();
-                          setState(() {
-                            searchQuery = query;
-                            filteredItems = sortedItems.where((doc) {
-                              final item = doc.data() as Map<String, dynamic>;
-                              final itemName = item['itemName']?.toString().toLowerCase() ?? '';
-                              final qualityName = item['qualityName']?.toString().toLowerCase() ?? '';
-                              return itemName.contains(query) || qualityName.contains(query);
-                            }).toList();
-                          });
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Search Items...',
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(32),
-                            borderSide: BorderSide.none,
-                          ),
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF212529)),
-                          suffixIcon: searchQuery.isNotEmpty
-                              ? IconButton(
-                            icon: const Icon(Icons.clear, color: Color(0xFF212529)),
-                            onPressed: () {
-                              setState(() {
-                                searchQuery = '';
-                                filteredItems = sortedItems;
-                              });
-                            },
-                          )
-                              : null,
-                          contentPadding: const EdgeInsets.symmetric(
-                              vertical: 14, horizontal: 20),
-                        ),
-                      ),
-                    ),
-                    _buildDialogTableHeader(),
-                    Expanded(
-                      child: filteredItems.isEmpty
-                          ? const Center(
-                        child: Text(
-                          'No items found',
-                          style: TextStyle(color: Color(0xFF212529)),
-                        ),
-                      )
-                          : ListView.builder(
-                        padding: const EdgeInsets.all(8),
-                        itemCount: filteredItems.length,
-                        itemBuilder: (context, index) =>
-                            _buildDialogItemRow(filteredItems[index]),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      );
+      DateTime date;
+      if (dateValue is Timestamp) date = dateValue.toDate();
+      else if (dateValue is String) date = DateTime.parse(dateValue);
+      else if (dateValue is DateTime) date = dateValue;
+      else date = DateTime.fromMillisecondsSinceEpoch(dateValue?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch);
+      return DateFormat('dd-MM-yyyy').format(date);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading items: $e')),
-      );
+      print('Error parsing date: $e');
+      return DateFormat('dd-MM-yyyy').format(DateTime.now());
     }
   }
 
-  Widget _buildDialogTableHeader() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12.0),
-      decoration: BoxDecoration(
-        color: const Color(0xFF212529),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildHeaderCell('Quality + Item', flex: 3), // Combined column
-            _buildHeaderCell('Price'),
-            _buildHeaderCell('Dimensions'),
-            _buildHeaderCell('Packaging Unit'),
-            _buildHeaderCell('Cvrd'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDialogItemRow(DocumentSnapshot itemDoc) {
-    final item = itemDoc.data() as Map<String, dynamic>;
-    final dimensions = [
-      (item['length'] as num).toInt(),
-      (item['width'] as num).toInt(),
-      (item['height'] as num).toInt(),
-    ];
-    final size = dimensions[0] * dimensions[1] * dimensions[2];
-    final coveredStatus = item['covered'] ?? 'Uncovered';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF343A40),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(3, 3))],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () async {
-            Navigator.pop(context);
-            await _addItemWithDefaults(itemDoc);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Combined Quality + Item Name
-                _buildDialogCell(
-                  '${item['qualityName']}: ${item['itemName']}', // Format: "Quality: Item"
-                  flex: 3,
-                  color: const Color(0xFFE9ECEF),
-                ),
-                // Price
-                _buildDialogCell('${item['purchasePrice']}'),
-                // Dimensions
-                _buildDialogCell('${item['length']}x${item['width']}x${item['height']}'),
-                // Packaging Unit
-                _buildDialogCell(item['packagingUnit']),
-                // Status (Covered/Uncovered)
-                _buildDialogCell(
-                  coveredStatus,
-                  color: coveredStatus == 'Covered' ? Colors.green : Colors.red,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDialogCell(String text, {int flex = 1, Color color = const Color(0xFFE9ECEF)}) {
-    return Expanded(
-      flex: flex,
-      child: Text(
-        text,
-        style: TextStyle(color: color, fontSize: 14),
-        textAlign: TextAlign.center,
-      ),
-    );
-  }
-  Future<void> _addItemWithDefaults(DocumentSnapshot itemDoc) async {
+  Future<int> _fetchStockQuantity(String itemId) async {
     try {
-      final item = itemDoc.data() as Map<String, dynamic>;
-      final quality = await FirebaseFirestore.instance
-          .collection('qualities')
-          .doc(item['qualityId'])
-          .get();
+      final doc = await _firestore.collection('items').doc(itemId).get();
+      final data = doc.data();
+      return data?['stockQuantity'] is int ? data!['stockQuantity'] : int.tryParse(data?['stockQuantity']?.toString() ?? '0') ?? 0;
+    } catch (e) {
+      print('Error fetching stock quantity: $e');
+      return 0;
+    }
+  }
 
-      // Fetch the "covered" status from the item document
-      final coveredStatus = item['covered'] ?? 'Uncovered'; // Default to 'Uncovered' if null
+  Future<void> _addItem(Item item) async {
+    setState(() => _isLoading = true);
+    try {
+      final qualitySnapshot = await _firestore.collection('qualities').where('name', isEqualTo: item.quality).limit(1).get();
+      if (qualitySnapshot.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Quality not found')));
+        return;
+      }
 
-      // Fetch the correct discount based on the coverage status
-      final discount = coveredStatus == 'Covered'
-          ? (quality.data()?['covered_discount'] ?? 0.0).toDouble()
-          : (quality.data()?['uncovered_discount'] ?? 0.0).toDouble();
+      final qualityData = qualitySnapshot.docs.first.data() as Map<String, dynamic>;
+      final discount = (item.covered.toLowerCase() == "yes") ? (qualityData['covered_discount'] ?? 0.0).toDouble() : (qualityData['uncovered_discount'] ?? 0.0).toDouble();
 
-      const quantity = 1;
-      final price = (item['purchasePrice'] as num).toInt();
-      final dimensions = [
-        (item['length'] as num).toInt(),
-        (item['width'] as num).toInt(),
-        (item['height'] as num).toInt(),
-      ];
-      final size = dimensions[0] * dimensions[1] * dimensions[2] * quantity;
-      final total = (price * quantity * (1 - discount / 100)).toInt();
+      final doc = await _firestore.collection('items').doc(item.id).get();
+      if (!doc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item not found')));
+        return;
+      }
+
+      final itemData = doc.data() as Map<String, dynamic>;
+      final length = (itemData['length'] as num?)?.toInt() ?? 0;
+      final width = (itemData['width'] as num?)?.toInt() ?? 0;
+      final height = (itemData['height'] as num?)?.toInt() ?? 0;
+      final size = length * width * height;
+      final stockQuantity = itemData['stockQuantity'] is int ? itemData['stockQuantity'] : int.tryParse(itemData['stockQuantity']?.toString() ?? '0') ?? 0;
 
       setState(() {
-        addedItems.add({
-          'id': itemDoc.id,
-          'name': '${item['qualityName']} ${item['itemName']}',
-          'quantity': quantity,
-          'price': price,
-          'discount': discount.toInt(),
-          'total': total,
-          'size': size,
-          'dimensions': dimensions,
-          'editingQuantity': false,
-          'editingPrice': false,
-          'editingDiscount': false,
-          'covered': coveredStatus, // Add the "covered" status to the item
-          'packagingUnit': item['packagingUnit'], // Add the packaging unit
-        });
-
-        totalQuantity += quantity;
-        totalOccupiedSpace += size;
-        totalOrderValue += total;
+        _items.add(OrderItem(
+          itemId: item.id,
+          name: item.name,
+          quality: item.quality,
+          packagingUnit: item.packagingUnit,
+          quantity: 1,
+          price: item.purchasePrice,
+          discount: discount,
+          covered: item.covered,
+          size: size,
+          stockQuantity: stockQuantity,
+        ));
+        _calculateTotal();
       });
+      Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error adding item: ${e.toString()}')),
-      );
+      print('Error adding item: $e');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add item')));
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  void _updateItemValues(int index, String field, int newValue) {
-    setState(() {
-      final item = addedItems[index];
-      final int oldQuantity = item['quantity'];
-      final int oldTotal = item['total'];
-      final int oldSize = item['size'];
-
-      item[field] = newValue;
-
-      if (field == 'quantity' || field == 'price' || field == 'discount') {
-        final List<int> dimensions = List<int>.from(item['dimensions']);
-        final int quantity = field == 'quantity' ? newValue : item['quantity'];
-        final int price = field == 'price' ? newValue : item['price'];
-        final int discount = field == 'discount' ? newValue : item['discount'];
-
-        item['total'] = (price * quantity * (1 - discount / 100)).toInt();
-        item['size'] = dimensions[0] * dimensions[1] * dimensions[2] * quantity;
-      }
-
-      totalOccupiedSpace += (item['size'] as int) - oldSize;
-      totalOrderValue += (item['total'] as int) - oldTotal;
-      totalQuantity += (field == 'quantity') ? (newValue - oldQuantity) : 0;
-
-      // Update the "isCovered" status for all items
-      int cumulativeSpace = 0;
-      for (var i = 0; i < addedItems.length; i++) {
-        cumulativeSpace += addedItems[i]['size'] as int;
-        addedItems[i]['isCovered'] = cumulativeSpace <= widget.vehicleSize;
-      }
-    });
+  void _calculateTotal() {
+    _subtotal = _items.fold(0.0, (sum, item) => sum + (item.quantity * item.price * (1 - item.discount / 100)));
+    final tax = _subtotal * (double.tryParse(_taxController.text) ?? 0.0) / 100;
+    _total = _subtotal + tax;
   }
 
-  void _deleteItemFromList(int index) {
-    setState(() {
-      final item = addedItems.removeAt(index);
-      totalQuantity -= item['quantity'] as int;
-      totalOccupiedSpace -= item['size'] as int;
-      totalOrderValue -= item['total'] as int;
-
-      // Update the "isCovered" status for all items
-      int cumulativeSpace = 0;
-      for (var i = 0; i < addedItems.length; i++) {
-        cumulativeSpace += addedItems[i]['size'] as int;
-        addedItems[i]['isCovered'] = cumulativeSpace <= widget.vehicleSize;
-      }
-    });
-  }
-
-  double _calculateCoverage() {
-    if (widget.vehicleSize == 0) return 0;
-    return (totalOccupiedSpace / widget.vehicleSize * 100).clamp(0, 200);
-  }
-
-  double get subtotal => totalOrderValue.toDouble();
-  double get taxAmount => subtotal * (taxPercentage / 100);
-  double get totalAfterTax => subtotal + taxAmount;
-
-  Future<void> _saveOrder() async {
-    if (addedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add at least one item')),
-      );
+  Future<void> _submitOrder() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one item')));
       return;
     }
 
+    setState(() => _isLoading = true);
+
+    final orderData = {
+      'company_name': widget.companyName,
+      'vehicle_name': widget.vehicleName,
+      'vehicle_size': widget.vehicleSize,
+      'order_date': _orderDateController.text,
+      'tax_percentage': double.tryParse(_taxController.text) ?? 0.5,
+      'subtotal': _subtotal,
+      'tax_amount': _total - _subtotal,
+      'total_after_tax': _total,
+      'total_quantity': _items.fold(0, (sum, item) => sum + item.quantity),
+      'total_occupied_space': _items.fold(0, (sum, item) => sum + item.size * item.quantity),
+      'items': _items.map((item) => item.toMap()).toList(),
+      'created_at': FieldValue.serverTimestamp(),
+    };
+
     try {
-      await FirebaseFirestore.instance.collection('purchase_orders').add({
-        'company_name': widget.companyName,
-        'vehicle_name': widget.vehicleName,
-        'order_date': _dateController.text,
-        'tax_percentage': taxPercentage,
-        'subtotal': subtotal,
-        'tax_amount': taxAmount,
-        'total_after_tax': totalAfterTax,
-        'total_quantity': totalQuantity,
-        'total_occupied_space': totalOccupiedSpace,
-        'items': addedItems,
-        'created_at': FieldValue.serverTimestamp(),
-      });
-
+      if (widget.orderId != null) {
+        await _firestore.collection('purchase_orders').doc(widget.orderId).update(orderData);
+      } else {
+        await _firestore.collection('purchase_orders').add(orderData);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved successfully!')));
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order saved successfully!')),
-      );
-    } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save order: $error')),
-      );
+    } catch (e) {
+      print('Error saving order: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving order: $e')));
+    } finally {
+      setState(() => _isLoading = false);
     }
-  }
-
-  Widget _buildEditableField(int index, String field) {
-    final item = addedItems[index];
-    final bool isEditing = item['editing${field.capitalize()}'];
-    final String value = item[field].toString();
-    final String suffix = field == 'discount' ? '%' : '';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: isEditing
-          ? TextFormField(
-        initialValue: value,
-        keyboardType: TextInputType.number,
-        autofocus: true,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: Colors.white, fontSize: 14),
-        decoration: InputDecoration(
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: 8, vertical: 4),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide.none,
-          ),
-          filled: true,
-          fillColor: const Color(0xFF495057),
-        ),
-        onFieldSubmitted: (newValue) {
-          final int parsedValue = int.tryParse(newValue) ?? item[field];
-          _updateItemValues(index, field, parsedValue);
-          setState(() => item['editing${field.capitalize()}'] = false);
-        },
-      )
-          : GestureDetector(
-        onTap: () =>
-            setState(() => item['editing${field.capitalize()}'] = true),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF343A40),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            '$value$suffix',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFE9ECEF),
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE9ECEF),
       appBar: AppBar(
-        title: Text(
-          'New Order - ${widget.companyName}',
-          style: const TextStyle(color: Color(0xFFE9ECEF)),
-        ),
-        backgroundColor: const Color(0xFF212529),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, color: Color(0xFFE9ECEF)),
-            onPressed: _showItemSelectionDialog,
-            tooltip: 'Add Items',
-          ),
-        ],
+        backgroundColor: _backgroundColor,
+        title: Text(widget.orderId != null ? "Edit Purchase Order" : "Add Purchase Order", style: const TextStyle(color: _textColor)),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: _textColor),
       ),
-      body: Column(
+      backgroundColor: _backgroundColor,
+      body: Stack(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(24.0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
+                  flex: 3,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Order Date',
-                        style: TextStyle(
-                          color: Color(0xFF495057),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                      _buildItemsHeader(),
+                      const SizedBox(height: 16),
+                      Container(
+                        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                        child: ListView.separated(
+                          controller: _itemsScrollController,
+                          itemCount: _items.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) => _buildItemRow(_items[index], index),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      _buildFormField(
-                        controller: _dateController,
-                        isDate: true,
-                      ),
+                      if (_items.isEmpty)
+                        Container(
+                          height: 200,
+                          alignment: Alignment.center,
+                          child: const Text("No items added", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
+                        ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 24),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Tax Percentage',
-                        style: TextStyle(
-                          color: Color(0xFF495057),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
+                  flex: 1,
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          _buildSummaryCard(),
+                          const SizedBox(height: 24),
+                          _buildInputPanel(),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      _buildFormField(
-                        controller: _taxController,
-                        isTax: true,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _buildTableHeader(),
-          Expanded(
-            child: ListView.builder(
-              itemCount: addedItems.length,
-              itemBuilder: (context, index) => Container(
-                margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 12.0),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2B3035),
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 3,
-                      offset: Offset(2, 2),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12.0),
-                  child: Row(
-                    children: [
-                      // Item Name (flex: 3)
-                      Expanded(
-                        flex: 3,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: Text(
-                            addedItems[index]['name'],
-                            style: const TextStyle(
-                              color: Color(0xFFE9ECEF),
-                              fontSize: 14,
-                            ),
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      // Quantity (flex: 1)
-                      Expanded(
-                        flex: 1,
-                        child: _buildEditableField(index, 'quantity'),
-                      ),
-                      // Price (flex: 1)
-                      Expanded(
-                        flex: 1,
-                        child: _buildEditableField(index, 'price'),
-                      ),
-                      // Discount (flex: 1)
-                      Expanded(
-                        flex: 1,
-                        child: _buildEditableField(index, 'discount'),
-                      ),
-                      // Total (flex: 1)
-                      Expanded(
-                        flex: 1,
-                        child: Text(
-                          '\$${addedItems[index]['total']}',
-                          style: const TextStyle(
-                            color: Color(0xFFE9ECEF),
-                            fontSize: 14,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      // Packaging Unit (flex: 1)
-                      Expanded(
-                        flex: 1,
-                        child: Text(
-                          addedItems[index]['packagingUnit'],
-                          style: const TextStyle(
-                            color: Color(0xFFE9ECEF),
-                            fontSize: 14,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      // Status (flex: 1) - Updated Code
-                      Expanded(
-                        flex: 1,
-                        child: Text(
-                          addedItems[index]['covered'] ?? 'Uncovered', // Display the "covered" status
-                          style: TextStyle(
-                            color: addedItems[index]['covered'] == 'Covered' ? Colors.green : Colors.red,
-                            fontSize: 14,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      // Delete Button (flex: 0)
-                      Expanded(
-                        flex: 0,
-                        child: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                          onPressed: () => _deleteItemFromList(index),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(16.0),
-            decoration: const BoxDecoration(
-              color: Color(0xFF212529),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 6,
-                  offset: Offset(0, -3),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildSummaryTile('Items', totalQuantity.toString()),
-                _buildSummaryTile('Space', '$totalOccupiedSpace in³'),
-                _buildSummaryTile('Coverage', '${_calculateCoverage().toStringAsFixed(1)}%'),
-                _buildSummaryTile('Subtotal', '\$${subtotal.toStringAsFixed(0)}'),
-                _buildSummaryTile('Tax', '\$${taxAmount.toStringAsFixed(0)}'),
-                _buildSummaryTile('Total', '\$${totalAfterTax.toStringAsFixed(0)}'),
-                ElevatedButton(
-                  onPressed: _saveOrder,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF343A40),
-                    foregroundColor: const Color(0xFFE9ECEF),
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24.0),
                     ),
                   ),
-                  child: const Text('Save Order'),
                 ),
               ],
             ),
           ),
+          if (_isLoading) const Center(child: CircularProgressIndicator(color: _primaryColor)),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryTile(String title, String value) {
-    return Column(
+  Widget _buildItemsHeader() => Container(
+    height: 56,
+    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+    decoration: BoxDecoration(
+      color: _primaryColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+    ),
+    child: const Row(
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-              color: Color(0xFFADB5BD),
-              fontSize: 14,
-              fontWeight: FontWeight.w500
+        Expanded(flex: 2, child: Center(child: Text('Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 2, child: Center(child: Text('Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Cvrd', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Qty', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Price', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Disc%', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Total', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text('Stock', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+      ],
+    ),
+  );
+
+  Widget _buildItemRow(OrderItem item, int index) => GestureDetector(
+    onTap: _isLoading ? null : () => setState(() => _selectedItemIndex = _selectedItemIndex == index ? null : index),
+    child: Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+      ),
+      child: Stack(
+        children: [
+          Row(
+            children: [
+              Expanded(flex: 2, child: Center(child: Text(item.quality, style: const TextStyle(color: _textColor, fontSize: 14)))),
+              Expanded(flex: 2, child: Center(child: Text(item.name, style: const TextStyle(color: _textColor, fontSize: 14)))),
+              Expanded(
+                  flex: 1,
+                  child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          item.covered,
+                          style: TextStyle(color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800], fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                      ))),
+              Expanded(
+                  flex: 1,
+                  child: Center(
+                      child: TextFormField(
+                        initialValue: item.quantity.toString(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: _textColor, fontSize: 14),
+                        decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        enabled: !_isLoading,
+                        onChanged: (value) {
+                          if (value.isNotEmpty) {
+                            setState(() {
+                              item.quantity = int.parse(value);
+                              _calculateTotal();
+                            });
+                          }
+                        },
+                      ))),
+              Expanded(
+                  flex: 1,
+                  child: Center(
+                      child: TextFormField(
+                        initialValue: item.price.toStringAsFixed(0),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: _textColor, fontSize: 14),
+                        decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        enabled: !_isLoading,
+                        onChanged: (value) {
+                          if (value.isNotEmpty) {
+                            setState(() {
+                              item.price = double.parse(value);
+                              _calculateTotal();
+                            });
+                          }
+                        },
+                      ))),
+              Expanded(
+                  flex: 1,
+                  child: Center(
+                      child: TextFormField(
+                        initialValue: item.discount.toStringAsFixed(0),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: _textColor, fontSize: 14),
+                        decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        enabled: !_isLoading,
+                        onChanged: (value) {
+                          if (value.isNotEmpty) {
+                            setState(() {
+                              item.discount = double.parse(value);
+                              _calculateTotal();
+                            });
+                          }
+                        },
+                      ))),
+              Expanded(
+                  flex: 1,
+                  child: Center(
+                      child: Text(
+                        (item.quantity * item.price * (1 - item.discount / 100)).toStringAsFixed(0),
+                        style: const TextStyle(color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                      ))),
+              Expanded(flex: 1, child: Center(child: Text(item.stockQuantity.toString(), style: const TextStyle(color: _textColor, fontSize: 14)))),
+            ],
           ),
+          if (_selectedItemIndex == index)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: GestureDetector(
+                onTap: _isLoading
+                    ? null
+                    : () {
+                  setState(() {
+                    _items.removeAt(index);
+                    _selectedItemIndex = null;
+                    _calculateTotal();
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: Colors.red.withOpacity(0.9), shape: BoxShape.circle),
+                  child: const Icon(Icons.close, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildInputPanel() => Container(
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+    ),
+    child: Column(
+      children: [
+        ElevatedButton.icon(
+          onPressed: _isLoading ? null : _showAddItemDialog,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primaryColor,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 56),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
+          label: const Text('ADD ITEM', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Color(0xFFE9ECEF),
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
+        const SizedBox(height: 24),
+        _buildTextField('Company', TextEditingController(text: widget.companyName), enabled: false),
+        const SizedBox(height: 16),
+        _buildTextField('Vehicle', TextEditingController(text: widget.vehicleName), enabled: false),
+        const SizedBox(height: 16),
+        _buildDateField('Order Date', _orderDateController),
+        const SizedBox(height: 16),
+        _buildTextField('Tax Percentage (%)', _taxController, isNumeric: true, onChanged: (value) => setState(() => _calculateTotal())),
+        const SizedBox(height: 16),
+        _buildTextField('Total Vehicle Size', TextEditingController(text: widget.vehicleSize.toString()), enabled: false),
+        const SizedBox(height: 24),
+        ElevatedButton.icon(
+          onPressed: _isLoading ? null : _submitOrder,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primaryColor,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 56),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(vertical: 16),
           ),
+          icon: const Icon(Icons.save, size: 20),
+          label: const Text('SAVE ORDER', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         ),
       ],
+    ),
+  );
+
+  Widget _buildTextField(String label, TextEditingController controller, {bool isNumeric = false, bool enabled = true, void Function(String)? onChanged}) => TextFormField(
+    controller: controller,
+    style: const TextStyle(color: _textColor, fontSize: 14),
+    decoration: InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: _backgroundColor,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      labelStyle: const TextStyle(color: _secondaryTextColor),
+    ),
+    keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+    inputFormatters: isNumeric ? [FilteringTextInputFormatter.digitsOnly] : null,
+    validator: enabled ? (value) => value!.isEmpty ? 'Required field' : null : null,
+    enabled: enabled && !_isLoading,
+    onChanged: onChanged,
+  );
+
+  Widget _buildDateField(String label, TextEditingController controller) => TextFormField(
+    controller: controller,
+    readOnly: true,
+    onTap: _isLoading ? null : () => _selectDate(controller),
+    style: const TextStyle(color: _textColor, fontSize: 14),
+    decoration: InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: _backgroundColor,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      labelStyle: const TextStyle(color: _secondaryTextColor),
+      suffixIcon: const Icon(Icons.calendar_today, color: _secondaryTextColor),
+    ),
+    validator: (value) => value!.isEmpty ? 'Required field' : null,
+  );
+
+  Widget _buildSummaryCard() => Container(
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 24, spreadRadius: 2)],
+    ),
+    child: Column(
+      children: [
+        SizedBox(
+          width: 100,
+          height: 100,
+          child: CustomPaint(
+            painter: CoverageProgressPainter(
+              progress: widget.vehicleSize > 0 ? _items.fold(0, (sum, item) => sum + item.size * item.quantity) / widget.vehicleSize : 0.0,
+              animation: _animation,
+            ),
+            child: Center(
+              child: AnimatedBuilder(
+                animation: _animation,
+                builder: (context, child) {
+                  final animatedProgress = (widget.vehicleSize > 0 ? _items.fold(0, (sum, item) => sum + item.size * item.quantity) / widget.vehicleSize : 0.0) * _animation.value;
+                  return Text(
+                    widget.vehicleSize > 0 ? '${(animatedProgress * 100).toStringAsFixed(0)}%' : '0%',
+                    style: const TextStyle(color: _textColor, fontSize: 20, fontWeight: FontWeight.bold),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildSummaryItem('Covered Items', _items.where((item) => item.covered.toLowerCase() == 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
+        _buildSummaryItem('Uncovered Items', _items.where((item) => item.covered.toLowerCase() != 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
+        _buildSummaryItem('Total Items', _items.fold(0, (sum, item) => sum + item.quantity).toString()),
+        const Divider(),
+        _buildSummaryItem('Subtotal', '${_subtotal.toStringAsFixed(0)}/-'),
+        _buildSummaryItem('Tax', '${(_total - _subtotal).toStringAsFixed(0)}/-'),
+        const Divider(),
+        _buildSummaryItem('Total', '${_total.toStringAsFixed(0)}/-', valueStyle: const TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+      ],
+    ),
+  );
+
+  Widget _buildSummaryItem(String label, String value, {TextStyle? valueStyle}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: _secondaryTextColor)),
+        Text(value, style: valueStyle ?? const TextStyle(color: _textColor)),
+      ],
+    ),
+  );
+
+  Future<void> _showAddItemDialog() async {
+    if (_isLoading) return;
+    await showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setState) => Dialog(
+          backgroundColor: _backgroundColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: _surfaceColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Search items...',
+                    filled: true,
+                    fillColor: _backgroundColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    suffixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+                  ),
+                  onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+                ),
+                const SizedBox(height: 16),
+                _buildInventoryHeader(),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _firestore.collection('items').snapshots(),
+                    builder: (_, snapshot) {
+                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      final items = snapshot.data!.docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return (data['itemName'] as String? ?? '').toLowerCase().contains(_searchQuery) ||
+                            (data['qualityName'] as String? ?? '').toLowerCase().contains(_searchQuery);
+                      }).toList();
+                      return ListView.separated(
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemCount: items.length,
+                        itemBuilder: (_, index) => _buildInventoryItem(Item.fromMap(items[index].data() as Map<String, dynamic>, items[index].id)),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _searchQuery = '';
+
+  Widget _buildInventoryHeader() => Container(
+    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+    decoration: BoxDecoration(
+      color: _primaryColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+    ),
+    child: const Row(
+      children: [
+        Expanded(child: Text('Quality', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+        Expanded(child: Text('Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+        Expanded(child: Text('Covered', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+        Expanded(child: Text('Price', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600), textAlign: TextAlign.center)),
+      ],
+    ),
+  );
+
+  Widget _buildInventoryItem(Item item) => InkWell(
+    onTap: _isLoading ? null : () => _addItem(item),
+    child: Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+      ),
+      child: Row(
+        children: [
+          Expanded(child: Text(item.quality, style: const TextStyle(color: _textColor), textAlign: TextAlign.center)),
+          Expanded(child: Text(item.name, style: const TextStyle(color: _textColor), textAlign: TextAlign.center)),
+          Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  item.covered,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800], fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+              )),
+          Expanded(child: Text(item.purchasePrice.toStringAsFixed(0), style: const TextStyle(color: _textColor), textAlign: TextAlign.center)),
+        ],
+      ),
+    ),
+  );
+
+  Future<void> _selectDate(TextEditingController controller) async {
+    if (_isLoading) return;
+    final pickedDate = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101));
+    if (pickedDate != null) setState(() => controller.text = DateFormat('dd-MM-yyyy').format(pickedDate));
+  }
+}
+
+// Helper Components
+class CompanyVehicleSelectionDialog extends StatefulWidget {
+  @override
+  _CompanyVehicleSelectionDialogState createState() => _CompanyVehicleSelectionDialogState();
+}
+
+class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionDialog> {
+  String? selectedCompany;
+  String? selectedVehicle;
+  int? selectedVehicleSize;
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: _surfaceColor,
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _surfaceColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Select Company & Vehicle', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+            const SizedBox(height: 20),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('companies').snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const CircularProgressIndicator();
+                return DropdownButtonFormField<String>(
+                  decoration: InputDecoration(
+                    labelText: 'Company',
+                    labelStyle: const TextStyle(color: _secondaryTextColor),
+                    filled: true,
+                    fillColor: _backgroundColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  items: snapshot.data!.docs.map((doc) => DropdownMenuItem<String>(value: doc['name'], child: Text(doc['name'] ?? '', style: const TextStyle(color: _textColor)))).toList(),
+                  onChanged: _isLoading ? null : (value) => setState(() => selectedCompany = value),
+                  validator: (value) => value == null ? 'Required field' : null,
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('vehicles').snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const CircularProgressIndicator();
+                return DropdownButtonFormField<String>(
+                  decoration: InputDecoration(
+                    labelText: 'Vehicle',
+                    labelStyle: const TextStyle(color: _secondaryTextColor),
+                    filled: true,
+                    fillColor: _backgroundColor,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                  items: snapshot.data!.docs
+                      .map((doc) => DropdownMenuItem<String>(
+                    value: doc['name'],
+                    child: Text(doc['name'] ?? '', style: const TextStyle(color: _textColor)),
+                    onTap: () => selectedVehicleSize = doc['size'] as int? ?? 0,
+                  ))
+                      .toList(),
+                  onChanged: _isLoading ? null : (value) => setState(() => selectedVehicle = value),
+                  validator: (value) => value == null ? 'Required field' : null,
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _isLoading ? null : () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
+                ),
+                const SizedBox(width: 16),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                    if (selectedCompany != null && selectedVehicle != null && selectedVehicleSize != null) {
+                      Navigator.pop(context, {'company': selectedCompany, 'vehicle': selectedVehicle, 'vehicleSize': selectedVehicleSize});
+                    }
+                  },
+                  child: const Text('Proceed', style: TextStyle(color: _surfaceColor, fontSize: 14)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) return this;
-    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
+class _HeaderCell extends StatelessWidget {
+  final String text;
+  final double? width;
+
+  const _HeaderCell(this.text, [this.width]);
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: width,
+    child: Center(child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14), overflow: TextOverflow.ellipsis)),
+  );
+}
+
+class _DataCell extends StatelessWidget {
+  final String text;
+  final double? width;
+
+  const _DataCell(this.text, [this.width]);
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: width,
+    child: Center(child: Text(text, style: const TextStyle(color: _textColor, fontSize: 14), overflow: TextOverflow.ellipsis, maxLines: 1)),
+  );
+}
+
+class _ActionCell extends StatelessWidget {
+  final DocumentSnapshot orderDoc;
+  final double? width;
+  final Function(DocumentSnapshot) onView;
+  final Function(DocumentSnapshot) onEdit;
+  final Function(DocumentSnapshot) onDelete;
+
+  const _ActionCell(this.orderDoc, this.width, {required this.onView, required this.onEdit, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(icon: const Icon(Icons.remove_red_eye, color: Colors.blue, size: 20), onPressed: () => onView(orderDoc), tooltip: 'View Order'),
+          IconButton(icon: const Icon(Icons.edit, color: _primaryColor, size: 20), onPressed: () => onEdit(orderDoc), tooltip: 'Edit Order'),
+          IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => onDelete(orderDoc), tooltip: 'Delete Order'),
+        ],
+      ),
+    );
   }
 }
