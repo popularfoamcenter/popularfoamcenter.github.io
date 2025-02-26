@@ -48,6 +48,7 @@ dependencies:
   path_provider:
   file_saver:
   uuid:
+  fl_chart:
 
 dev_dependencies:
   flutter_test:
