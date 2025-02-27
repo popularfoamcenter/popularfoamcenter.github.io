@@ -39,7 +39,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
       if (dateValue is Timestamp) {
         date = dateValue.toDate();
       } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
+        date = DateFormat('dd-MM-yyyy').parse(dateValue);
       } else {
         date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
       }
@@ -52,8 +52,8 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
   void _viewInvoice(DocumentSnapshot invoiceDoc) {
     final invoice = invoiceDoc.data() as Map<String, dynamic>;
-    print('Retrieved Invoice Data: $invoice'); // Debug: Full invoice data
-    print('Retrieved Items: ${invoice['items']}'); // Debug: Items specifically
+    print('Retrieved Invoice Data: $invoice');
+    print('Retrieved Items: ${invoice['items']}');
     if (invoice['items'] == null || (invoice['items'] as List).isEmpty) {
       print('Warning: No items found in invoice ${invoiceDoc.id}');
     }
@@ -607,10 +607,7 @@ class _ActionCell extends StatelessWidget {
   }
 }
 
-
-// Color Scheme Matching PointOfSalePage
-
-// Data Models (unchanged)
+// Data Models
 class InvoiceItem {
   final String itemId;
   final String name;
@@ -672,7 +669,7 @@ class Item {
   );
 }
 
-// Invoice Screen (Redesigned)
+// Invoice Screen
 class InvoiceScreen extends StatefulWidget {
   final String company;
   final String? invoiceId;
@@ -700,14 +697,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final TextEditingController _receiveDateController = TextEditingController();
   final TextEditingController _taxController = TextEditingController(text: '0.5');
   final ScrollController _itemsScrollController = ScrollController();
-   Color _primaryColor = Color(0xFF0D6EFD);
-   Color _textColor = Color(0xFF2D2D2D);
-   Color _secondaryTextColor = Color(0xFF4A4A4A);
-   Color _backgroundColor = Color(0xFFF8F9FA);
-   Color _surfaceColor = Colors.white;
 
   @override
-
   void initState() {
     super.initState();
     if (widget.existingInvoice != null) {
@@ -722,8 +713,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   void _initializeExistingInvoice() {
     final invoice = widget.existingInvoice!;
     _invoiceIdController.text = invoice['invoiceId'];
-    _invoiceDateController.text = _formatDate(invoice['invoiceDate']);
-    _receiveDateController.text = _formatDate(invoice['receiveDate']);
+    _invoiceDateController.text = invoice['invoiceDate']; // Directly use string
+    _receiveDateController.text = invoice['receiveDate']; // Directly use string
     _taxController.text = invoice['taxPercentage'].toString();
 
     _originalItems = (invoice['items'] as List).map((item) => InvoiceItem(
@@ -731,9 +722,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       name: item['name'],
       quality: item['quality'],
       packagingUnit: item['packagingUnit'],
-      quantity: (item['quantity'] as num).toInt(), // Cast to int
-      price: (item['price'] as num).toDouble(), // Cast to double
-      discount: (item['discount'] as num).toDouble(), // Cast to double
+      quantity: (item['quantity'] as num).toInt(),
+      price: (item['price'] as num).toDouble(),
+      discount: (item['discount'] as num).toDouble(),
       covered: item['isCovered'] ? "Yes" : "No",
     )).toList();
 
@@ -747,7 +738,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       if (dateValue is Timestamp) {
         date = dateValue.toDate();
       } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
+        date = DateFormat('dd-MM-yyyy').parse(dateValue);
       } else {
         date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
       }
@@ -799,20 +790,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _submitInvoice() async {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
-      print('No items to save'); // Debug: Confirm items list is empty
+      print('No items to save');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please add at least one item')),
       );
       return;
     }
 
-    print('Items to save: ${_items.map((item) => item.toMap()).toList()}'); // Debug: Log items before saving
-
     final invoiceData = {
       'invoiceId': _invoiceIdController.text,
       'company': widget.company,
-      'invoiceDate': _invoiceDateController.text,
-      'receiveDate': _receiveDateController.text,
+      'invoiceDate': _invoiceDateController.text, // Save as "dd-MM-yyyy"
+      'receiveDate': _receiveDateController.text, // Save as "dd-MM-yyyy"
       'items': _items.map((item) => item.toMap()).toList(),
       'subtotal': _subtotal,
       'taxPercentage': double.parse(_taxController.text),
@@ -821,7 +810,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    print('Invoice Data to Save: $invoiceData'); // Debug: Log full invoice data
+    print('Invoice Data to Save: $invoiceData');
 
     try {
       if (widget.invoiceId != null) {
@@ -839,7 +828,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       );
       Navigator.pop(context);
     } catch (e) {
-      print('Error saving invoice: $e'); // Debug: Log any errors
+      print('Error saving invoice: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving invoice: $e')),
       );
@@ -1016,7 +1005,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   );
 
   Widget _buildItemRow(InvoiceItem item, int index) => GestureDetector(
-    onTap: () => setState(() => _selectedItemIndex = _selectedItemIndex == index ? null : index),
+    onTap: () =>
+        setState(() => _selectedItemIndex = _selectedItemIndex == index ? null : index),
     child: Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1079,12 +1069,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.quantity = int.parse(value); // Parse as int
+                              item.quantity = int.parse(value);
                               _calculateTotal();
                             });
                           }
                         },
-
                       ))),
               Expanded(
                   flex: 1,
@@ -1102,7 +1091,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.price = double.parse(value); // Parse as double
+                              item.price = double.parse(value);
                               _calculateTotal();
                             });
                           }
@@ -1124,7 +1113,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.discount = double.parse(value); // Parse as double
+                              item.discount = double.parse(value);
                               _calculateTotal();
                             });
                           }
@@ -1222,7 +1211,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   );
 
   Widget _buildTextField(String label, TextEditingController controller,
-      {bool isNumeric = false, bool enabled = true, void Function(String)? onChanged}) =>
+      {bool isNumeric = false,
+        bool enabled = true,
+        void Function(String)? onChanged}) =>
       TextFormField(
         controller: controller,
         style: TextStyle(color: _textColor, fontSize: 14),
@@ -1259,7 +1250,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       labelStyle: TextStyle(color: _secondaryTextColor),
-      suffixIcon:  Icon(Icons.calendar_today, color: _secondaryTextColor),
+      suffixIcon: Icon(Icons.calendar_today, color: _secondaryTextColor),
     ),
     validator: (value) => value!.isEmpty ? 'Required field' : null,
   );
@@ -1335,7 +1326,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    suffixIcon:  Icon(Icons.search, color: _secondaryTextColor),
+                    suffixIcon: Icon(Icons.search, color: _secondaryTextColor),
                   ),
                   onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
                 ),
@@ -1347,11 +1338,19 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _firestore.collection('items').snapshots(),
                     builder: (_, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
                       final items = snapshot.data!.docs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
-                        return data['itemName'].toString().toLowerCase().contains(_searchQuery) ||
-                            data['qualityName'].toString().toLowerCase().contains(_searchQuery);
+                        return data['itemName']
+                            .toString()
+                            .toLowerCase()
+                            .contains(_searchQuery) ||
+                            data['qualityName']
+                                .toString()
+                                .toLowerCase()
+                                .contains(_searchQuery);
                       }).toList();
                       return ListView.separated(
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -1427,14 +1426,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                  color: item.covered.toLowerCase() == "yes"
+                      ? Colors.green[100]
+                      : Colors.red[100],
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   item.covered,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800],
+                    color: item.covered.toLowerCase() == "yes"
+                        ? Colors.green[800]
+                        : Colors.red[800],
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1450,9 +1453,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
   int? _selectedItemIndex;
 }
-// ======================
+
 // Invoice View Screen (Read-Only)
-// ======================
 class InvoiceViewScreen extends StatelessWidget {
   final String company;
   final String invoiceId;
@@ -1464,7 +1466,7 @@ class InvoiceViewScreen extends StatelessWidget {
     required this.company,
     required this.invoiceId,
     required this.existingInvoice,
-  }) : items = const []; // Default value, overridden in factory
+  }) : items = const [];
 
   factory InvoiceViewScreen.fromData({
     required String company,
@@ -1503,7 +1505,7 @@ class InvoiceViewScreen extends StatelessWidget {
       if (dateValue is Timestamp) {
         date = dateValue.toDate();
       } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
+        date = DateFormat('dd-MM-yyyy').parse(dateValue);
       } else {
         date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
       }
@@ -1516,7 +1518,7 @@ class InvoiceViewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('InvoiceViewScreen Items: ${items.map((item) => item.toMap()).toList()}'); // Debug: Log items
+    print('InvoiceViewScreen Items: ${items.map((item) => item.toMap()).toList()}');
     return Scaffold(
       appBar: AppBar(
         backgroundColor: _backgroundColor,
@@ -1576,7 +1578,6 @@ class InvoiceViewScreen extends StatelessWidget {
       ),
     );
   }
-
 
   Widget _buildItemsHeader() => Container(
     height: 56,
@@ -1713,7 +1714,8 @@ class InvoiceViewScreen extends StatelessWidget {
             flex: 1,
             child: Center(
                 child: Text(
-                  (item.quantity * item.price * (1 - item.discount / 100)).toStringAsFixed(0),
+                  (item.quantity * item.price * (1 - item.discount / 100))
+                      .toStringAsFixed(0),
                   style: TextStyle(
                       color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
                 ))),
@@ -1736,9 +1738,9 @@ class InvoiceViewScreen extends StatelessWidget {
         const SizedBox(height: 16),
         _buildTextField('Company', company),
         const SizedBox(height: 16),
-        _buildTextField('Invoice Date', _formatDate(existingInvoice['invoiceDate'])),
+        _buildTextField('Invoice Date', existingInvoice['invoiceDate']),
         const SizedBox(height: 16),
-        _buildTextField('Receive Date', _formatDate(existingInvoice['receiveDate'])),
+        _buildTextField('Receive Date', existingInvoice['receiveDate']),
         const SizedBox(height: 16),
         _buildTextField('Tax Percentage (%)', existingInvoice['taxPercentage'].toString()),
       ],
@@ -1804,9 +1806,7 @@ class InvoiceViewScreen extends StatelessWidget {
   );
 }
 
-// ======================
 // Helper Components
-// ======================
 class CompanySelectionDialog extends StatefulWidget {
   @override
   _CompanySelectionDialogState createState() => _CompanySelectionDialogState();
@@ -2075,7 +2075,3 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
     );
   }
 }
-
-// ======================
-// Data Models
-// ======================

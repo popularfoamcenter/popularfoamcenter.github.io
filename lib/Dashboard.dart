@@ -237,7 +237,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         ),
         _buildMetricCard(
           context,
-          title: "Profit Today",
+          title: "Sales Value",
           animation: _profitTodayAnimation,
           icon: Icons.trending_up,
           gradient: const [Color(0xFF4ECDC4), Color(0xFF7EE8E2)],

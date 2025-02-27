@@ -40,7 +40,7 @@ class CoverageProgressPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..shader = const LinearGradient(
-        colors: [_primaryColor, Color(0xFF4A90E2)], // Matching UI gradient
+        colors: [_primaryColor, Color(0xFF4A90E2)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(Rect.fromCircle(center: center, radius: radius));
@@ -633,9 +633,9 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    _buildInputPanel(),
-                    const SizedBox(height: 24),
                     _buildSummaryCard(),
+                    const SizedBox(height: 24),
+                    _buildInputPanel(),
                   ],
                 ),
               ),
@@ -1050,9 +1050,9 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       key: _formKey,
                       child: Column(
                         children: [
-                          _buildInputPanel(),
-                          const SizedBox(height: 24),
                           _buildSummaryCard(),
+                          const SizedBox(height: 24),
+                          _buildInputPanel(),
                         ],
                       ),
                     ),
@@ -1506,6 +1506,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const CircularProgressIndicator();
                 return DropdownButtonFormField<String>(
+                  dropdownColor: _surfaceColor,
                   decoration: InputDecoration(
                     labelText: 'Company',
                     labelStyle: const TextStyle(color: _secondaryTextColor),
@@ -1526,6 +1527,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const CircularProgressIndicator();
                 return DropdownButtonFormField<String>(
+                  dropdownColor: _surfaceColor,
                   decoration: InputDecoration(
                     labelText: 'Vehicle',
                     labelStyle: const TextStyle(color: _secondaryTextColor),
