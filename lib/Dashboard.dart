@@ -625,7 +625,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          "Profit Overview",
+          "Sales Overview",
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF1A1A2F)),
         ),
         const SizedBox(height: 16),

@@ -21,7 +21,8 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final ScrollController _horizontalScrollController = ScrollController();
-  final double _mobileTableWidth = 1200;
+  final double _mobileTableWidth = 1400; // Increased to accommodate new ID column
+
   late TabController _tabController;
 
   @override
@@ -230,7 +231,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
           .collection('invoices')
           .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
           .where('timestamp', isLessThan: Timestamp.fromDate(endOfDay))
-          .orderBy('timestamp', descending: true)
+          .orderBy('timestamp', descending: true) // Latest to oldest
           .snapshots(),
       builder: (context, snapshot) => _buildTransactionList(snapshot),
     );
@@ -241,7 +242,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       stream: _firestore
           .collection('invoices')
           .where('type', isEqualTo: type)
-          .orderBy('timestamp', descending: true)
+          .orderBy('timestamp', descending: true) // Latest to oldest
           .snapshots(),
       builder: (context, snapshot) => _buildTransactionList(snapshot),
     );
@@ -282,6 +283,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       padding: EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
+          Expanded(child: _HeaderCell('ID')),
           Expanded(child: _HeaderCell('Customer')),
           Expanded(child: _HeaderCell('Type')),
           Expanded(child: _HeaderCell('Total')),
@@ -310,6 +312,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
+            Expanded(child: _DataCell(invoice.invoiceNumber.toString())),
             Expanded(child: _DataCell(invoice.customer['name'] ?? 'Walking Customer')),
             Expanded(child: _DataCell('', null, _getTypeLabel(invoice.type), _getTypeColor(invoice.type))),
             Expanded(child: _DataCell(total)),
@@ -334,6 +337,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       padding: EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
+          _HeaderCell('ID', 200),
           _HeaderCell('Customer', 200),
           _HeaderCell('Type', 150),
           _HeaderCell('Total', 150),
@@ -362,6 +366,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
+            _DataCell(invoice.invoiceNumber.toString(), 200),
             _DataCell(invoice.customer['name'] ?? 'Walking Customer', 200),
             _DataCell('', 150, _getTypeLabel(invoice.type), _getTypeColor(invoice.type)),
             _DataCell(total, 150),

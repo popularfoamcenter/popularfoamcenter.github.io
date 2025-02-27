@@ -7,7 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
-import'transactionspage.dart';
+import 'transactionspage.dart';
 
 class CartItem {
   final String quality;
@@ -156,6 +156,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _givenAmountController = TextEditingController();
   final TextEditingController _globalDiscountController = TextEditingController();
+  final TextEditingController _customCustomerNameController = TextEditingController();
 
   late Map<String, dynamic> _selectedCustomer;
   late String _selectedTransactionType;
@@ -167,6 +168,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   CartItem? _deletedItem;
   int? _deletedIndex;
   String? _returnInvoiceNumber;
+  bool _useCustomName = false; // Toggle for custom name input
 
   static const Color _primaryColor = Color(0xFF0D6EFD);
   static const Color _textColor = Color(0xFF2D2D2D);
@@ -192,12 +194,15 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _givenAmountController.text = widget.invoice!.givenAmount.toString();
       _globalDiscountController.text = _globalDiscount.toString();
       _phoneController.text = _selectedCustomer['number'] ?? '';
+      _customCustomerNameController.text = _selectedCustomer['name'] ?? '';
+      _useCustomName = _selectedCustomer['id'] == null || _selectedCustomer['id'].isEmpty;
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
       }
     } else {
       _selectedCustomer = walkingCustomer;
       _selectedTransactionType = 'Sale';
+      _customCustomerNameController.text = 'Walking Customer';
     }
   }
 
@@ -207,6 +212,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     _searchController.dispose();
     _givenAmountController.dispose();
     _globalDiscountController.dispose();
+    _customCustomerNameController.dispose();
     super.dispose();
   }
 
@@ -246,7 +252,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         total: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
       );
 
-      if (_selectedCustomer['id'] != 'walking') {
+      if (_selectedCustomer['id'] != 'walking' && !_useCustomName) {
         await _applyCustomerDiscounts(newItem);
       }
 
@@ -438,6 +444,15 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         ? widget.invoice!.invoiceNumber
         : await _getNextInvoiceNumber();
 
+    // Update _selectedCustomer with custom name if applicable
+    if (_useCustomName) {
+      _selectedCustomer = {
+        'id': '',
+        'name': _customCustomerNameController.text.trim().isEmpty ? 'Walking Customer' : _customCustomerNameController.text.trim(),
+        'number': _phoneController.text.trim(),
+      };
+    }
+
     return await _firestore.runTransaction<Invoice?>((transaction) async {
       try {
         if (isEditing) await _revertStockChanges(transaction, widget.invoice!);
@@ -491,8 +506,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     try {
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
-      final Uint8List logoImage =
-      (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
+      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
       DateTime invoiceDate = invoice.timestamp is Timestamp
           ? (invoice.timestamp as Timestamp).toDate()
           : DateTime.now();
@@ -986,8 +1000,56 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
               label: const Text('ADD ITEM',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
-        if (!widget.isReadOnly) const SizedBox(height: 24),
-        _buildCustomerDropdown(),
+        if (!widget.isReadOnly) const SizedBox(height: 10),
+        if (!widget.isReadOnly)
+          Row(
+            children: [
+              Checkbox(
+                value: _useCustomName,
+                onChanged: (value) {
+                  setState(() {
+                    _useCustomName = value!;
+                    if (_useCustomName) {
+                      _selectedCustomer = {
+                        'id': '',
+                        'name': _customCustomerNameController.text.trim().isEmpty ? 'Walking Customer' : _customCustomerNameController.text.trim(),
+                        'number': _phoneController.text.trim(),
+                      };
+                    } else {
+                      _selectedCustomer = walkingCustomer;
+                    }
+                  });
+                },
+              ),
+              const Text('Enter Custom Name', style: TextStyle(color: _textColor)),
+            ],
+          ),
+        const SizedBox(height:10),
+        if (_useCustomName && !widget.isReadOnly)
+          TextField(
+            controller: _customCustomerNameController,
+            decoration: InputDecoration(
+              labelText: 'Customer Name',
+              filled: true,
+              fillColor: _backgroundColor,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              labelStyle: TextStyle(color: _secondaryTextColor),
+            ),
+            style: TextStyle(color: _textColor),
+            onChanged: (value) {
+              setState(() {
+                _selectedCustomer = {
+                  'id': '',
+                  'name': value.trim().isEmpty ? 'Walking Customer' : value.trim(),
+                  'number': _phoneController.text.trim(),
+                };
+              });
+            },
+          )
+        else
+          _buildCustomerDropdown(),
         const SizedBox(height: 16),
         _buildTransactionTypeDropdown(),
         const SizedBox(height: 16),
@@ -1002,7 +1064,14 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                     borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 labelStyle: TextStyle(color: _secondaryTextColor)),
-            style: TextStyle(color: _textColor)),
+            style: TextStyle(color: _textColor),
+            onChanged: (value) {
+              if (_useCustomName) {
+                setState(() {
+                  _selectedCustomer['number'] = value.trim();
+                });
+              }
+            }),
         if (!widget.isReadOnly) const SizedBox(height: 24),
         if (!widget.isReadOnly)
           ElevatedButton.icon(
@@ -1051,6 +1120,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             onChanged: (value) => setState(() {
               _selectedCustomer = value!;
               _phoneController.text = value['number'] ?? '';
+              _customCustomerNameController.text = value['name'] ?? '';
               _refreshCartDiscounts();
             }),
             decoration: InputDecoration(
@@ -1064,7 +1134,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       });
 
   void _refreshCartDiscounts() {
-    if (_selectedCustomer['id'] == 'walking') return;
+    if (_selectedCustomer['id'] == 'walking' || _useCustomName) return;
     for (var item in _cartItems) {
       _applyCustomerDiscounts(item);
     }
@@ -1273,55 +1343,55 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     await showDialog(
         context: context,
         builder: (_) => StatefulBuilder(
-            builder: (context, setState) => Dialog(
-                backgroundColor: _backgroundColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                        color: _surfaceColor,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)
-                        ]),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      TextField(
-                          controller: _searchController,
-                          autofocus: true,
-                          decoration: InputDecoration(
-                              hintText: 'Search inventory...',
-                              filled: true,
-                              fillColor: _backgroundColor,
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              suffixIcon: const Icon(Icons.search, color: Color(0xFF6C757D))),
-                          onChanged: (value) => setState(() => _searchQuery = value.toLowerCase())),
-                      const SizedBox(height: 16),
-                      _buildInventoryHeader(),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.6,
-                          child: StreamBuilder<QuerySnapshot>(
-                              stream: _firestore.collection('items').snapshots(),
-                              builder: (_, snapshot) {
-                                if (!snapshot.hasData)
-                                  return const Center(child: CircularProgressIndicator());
-                                final items = snapshot.data!.docs.where((doc) {
-                                  final data = doc.data() as Map<String, dynamic>;
-                                  return data['itemName']
-                                      .toString()
-                                      .toLowerCase()
-                                      .contains(_searchQuery) ||
-                                      data['qualityName'].toString().toLowerCase().contains(_searchQuery);
-                                }).toList();
-                                return ListView.separated(
-                                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                                    itemCount: items.length,
-                                    itemBuilder: (_, index) =>
-                                        _buildInventoryItem(items[index].data() as Map<String, dynamic>));
-                              }))
-                    ])))));
+        builder: (context, setState) => Dialog(
+            backgroundColor: _backgroundColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                    color: _surfaceColor,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)
+                    ]),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                          hintText: 'Search inventory...',
+                          filled: true,
+                          fillColor: _backgroundColor,
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          suffixIcon: const Icon(Icons.search, color: Color(0xFF6C757D))),
+                      onChanged: (value) => setState(() => _searchQuery = value.toLowerCase())),
+                  const SizedBox(height: 16),
+                  _buildInventoryHeader(),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.6,
+                      child: StreamBuilder<QuerySnapshot>(
+                          stream: _firestore.collection('items').snapshots(),
+                          builder: (_, snapshot) {
+                            if (!snapshot.hasData)
+                              return const Center(child: CircularProgressIndicator());
+                            final items = snapshot.data!.docs.where((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              return data['itemName']
+                                  .toString()
+                                  .toLowerCase()
+                                  .contains(_searchQuery) ||
+                                  data['qualityName'].toString().toLowerCase().contains(_searchQuery);
+                            }).toList();
+                            return ListView.separated(
+                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                itemCount: items.length,
+                                itemBuilder: (_, index) =>
+                                    _buildInventoryItem(items[index].data() as Map<String, dynamic>));
+                          }))
+                ])))));
   }
 
   Widget _buildInventoryHeader() => Container(
