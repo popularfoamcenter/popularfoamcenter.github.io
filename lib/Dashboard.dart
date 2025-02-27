@@ -80,9 +80,9 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
     int totalInventory = 0;
     int totalValue = 0;
     for (var doc in itemsSnapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      int quantity = (data['stockQuantity'] ?? 0) as int;
-      int salePrice = (data['salePrice'] ?? 0) as int;
+      final data = doc.data();
+      int quantity = (data['stockQuantity'] as num?)?.toInt() ?? 0;
+      int salePrice = (data['salePrice'] as num?)?.toInt() ?? 0;
       totalInventory += quantity;
       totalValue += quantity * salePrice;
     }
@@ -106,10 +106,10 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
 
     Map<int, int> hourlyCounts = {};
     for (var doc in invoicesSnapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final timestamp = (data['timestamp'] as Timestamp).toDate();
-      final type = data['type'] as String;
-      final total = (data['total'] as int?) ?? 0;
+      final data = doc.data();
+      final timestamp = (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
+      final type = data['type'] as String? ?? 'Sale';
+      final total = (data['total'] as num?)?.toInt() ?? 0;
 
       if (timestamp.isAfter(todayStart)) {
         _transactionsToday[type] = (_transactionsToday[type] ?? 0) + 1;
@@ -159,7 +159,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
         padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 24),
         child: Column(
@@ -286,7 +286,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    isCurrency ? '${animation.value}/-' : animation.value.toString(),
+                    isCurrency ? '${NumberFormat.decimalPattern().format(animation.value)}/-' : animation.value.toString(),
                     style: TextStyle(color: Colors.white, fontSize: screenWidth < 600 ? 24 : 32, fontWeight: FontWeight.w800),
                   ),
                 ],
@@ -453,7 +453,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                       borderRadius: BorderRadius.circular(8),
                       backDrawRodData: BackgroundBarChartRodData(
                         show: true,
-                        toY: (_busyHoursData.map((e) => e.count).reduce((a, b) => a > b ? a : b) * 1.2).toDouble(),
+                        toY: (_busyHoursData.isNotEmpty ? _busyHoursData.map((e) => e.count).reduce((a, b) => a > b ? a : b) * 1.2 : 10).toDouble(),
                         color: Colors.grey.withOpacity(0.1),
                       ),
                     ),
@@ -660,7 +660,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
           Text(period, style: TextStyle(fontSize: 16, color: const Color(0xFF6C757D))),
           const SizedBox(height: 8),
           Text(
-            '$profit/-',
+            '${NumberFormat.decimalPattern().format(profit)}/-',
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color),
           ),
         ],
