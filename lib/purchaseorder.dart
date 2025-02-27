@@ -1506,6 +1506,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const CircularProgressIndicator();
                 return DropdownButtonFormField<String>(
+                  dropdownColor: _surfaceColor,
                   decoration: InputDecoration(
                     labelText: 'Company',
                     labelStyle: const TextStyle(color: _secondaryTextColor),
@@ -1526,6 +1527,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const CircularProgressIndicator();
                 return DropdownButtonFormField<String>(
+                  dropdownColor: _surfaceColor,
                   decoration: InputDecoration(
                     labelText: 'Vehicle',
                     labelStyle: const TextStyle(color: _secondaryTextColor),

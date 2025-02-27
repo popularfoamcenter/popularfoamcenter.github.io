@@ -11,7 +11,8 @@ import 'package:pfc/pointofsale.dart';
 import 'package:pfc/purchaseinvoice.dart';
 import 'package:pfc/qualities.dart';
 import 'package:pfc/purchaseorder.dart';
-import 'package:pfc/saleinvoices.dart';
+import 'package:pfc/transactionspage.dart';
+
 import 'package:pfc/vehicles.dart';
 import 'package:pfc/company.dart';
 import 'package:pfc/main.dart';
