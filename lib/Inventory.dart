@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/intl.dart';
 
 // Color Scheme
 const Color _primaryColor = Color(0xFF0D6EFD);
@@ -43,6 +44,7 @@ class _AddItemsState extends State<AddItems> {
   final TextEditingController _widthController = TextEditingController();
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _stockController = TextEditingController();
+  final TextEditingController _openingStockController = TextEditingController();
 
   String? _coveredOption;
   String? _selectedQualityId;
@@ -82,6 +84,7 @@ class _AddItemsState extends State<AddItems> {
                 _buildTextFormField('Item Name', _itemNameController),
                 _buildTextFormField('Purchase Price', _purchasePriceController, isNumeric: true),
                 _buildTextFormField('Sale Price', _salePriceController, isNumeric: true),
+                _buildTextFormField('Opening Stock', _openingStockController, isNumeric: true),
                 _buildTextFormField('Stock Quantity', _stockController, isNumeric: true),
               ]),
               const SizedBox(height: 24),
@@ -107,7 +110,6 @@ class _AddItemsState extends State<AddItems> {
 
   Widget _buildFormSection(String title, List<Widget> children) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _surfaceColor,
@@ -133,16 +135,12 @@ class _AddItemsState extends State<AddItems> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(
-            color: _textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w500
-        )),
+        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           style: const TextStyle(color: _textColor, fontSize: 14),
-          decoration: _inputDecoration(label),
+          decoration: _inputDecoration(),
           keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) => value!.isEmpty ? 'Required field' : null,
         ),
@@ -152,87 +150,113 @@ class _AddItemsState extends State<AddItems> {
   }
 
   Widget _buildDimensionField(String label, TextEditingController controller) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: _inputDecoration(label),
-      style: const TextStyle(color: _textColor, fontSize: 14),
-      validator: (value) => value!.isEmpty ? 'Required field' : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: _inputDecoration(),
+          style: const TextStyle(color: _textColor, fontSize: 14),
+          validator: (value) => value!.isEmpty ? 'Required field' : null,
+        ),
+      ],
     );
   }
 
   Widget _buildPackagingUnitDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _selectedPackagingUnit,
-      decoration: _inputDecoration('Packaging Unit'),
-      dropdownColor: _surfaceColor,
-      items: const [
-        DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
-        DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
-        DropdownMenuItem(value: 'Kilograms', child: Text('Kilograms')),
-        DropdownMenuItem(value: 'Dozen', child: Text('Dozen')),
-        DropdownMenuItem(value: 'Grams', child: Text('Grams')),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Packaging Unit', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _selectedPackagingUnit,
+          decoration: _inputDecoration(),
+          dropdownColor: _surfaceColor,
+          items: const [
+            DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
+            DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
+            DropdownMenuItem(value: 'Kilograms', child: Text('Kilograms')),
+            DropdownMenuItem(value: 'Dozen', child: Text('Dozen')),
+            DropdownMenuItem(value: 'Grams', child: Text('Grams')),
+          ],
+          onChanged: (value) => setState(() => _selectedPackagingUnit = value),
+          style: const TextStyle(color: _textColor),
+          validator: (value) => value == null ? 'Please select a unit' : null,
+        ),
       ],
-      onChanged: (value) => setState(() => _selectedPackagingUnit = value),
-      style: const TextStyle(color: _textColor),
-      validator: (value) => value == null ? 'Please select a unit' : null,
     );
   }
 
   Widget _buildCoveredDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _coveredOption,
-      decoration: _inputDecoration('Covered Option'),
-      dropdownColor: _surfaceColor,
-      items: const [
-        DropdownMenuItem(value: "Yes", child: Text("Covered")),
-        DropdownMenuItem(value: "-", child: Text("Uncovered")),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Covered Option', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _coveredOption,
+          decoration: _inputDecoration(),
+          dropdownColor: _surfaceColor,
+          items: const [
+            DropdownMenuItem(value: "Yes", child: Text("Covered")),
+            DropdownMenuItem(value: "-", child: Text("Uncovered")),
+          ],
+          onChanged: (value) => setState(() => _coveredOption = value),
+          style: const TextStyle(color: _textColor),
+          validator: (value) => value == null ? 'Please select an option' : null,
+        ),
       ],
-      onChanged: (value) => setState(() => _coveredOption = value),
-      style: const TextStyle(color: _textColor),
-      validator: (value) => value == null ? 'Please select an option' : null,
     );
   }
 
   Widget _buildQualityDropdown() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _qualities.snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const CircularProgressIndicator(color: _primaryColor);
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Text('No qualities available', style: TextStyle(color: _textColor));
-        }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Quality', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot>(
+          stream: _qualities.snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const CircularProgressIndicator(color: _primaryColor);
+            }
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return const Text('No qualities available', style: TextStyle(color: _textColor));
+            }
 
-        final qualities = snapshot.data!.docs;
-        return DropdownButtonFormField<String>(
-          value: _selectedQualityId,
-          decoration: _inputDecoration('Quality'),
-          dropdownColor: _surfaceColor,
-          items: qualities.map((quality) {
-            return DropdownMenuItem<String>(
-              value: quality.id,
-              child: Text(quality['name'], style: const TextStyle(color: _textColor)),
+            final qualities = snapshot.data!.docs;
+            return DropdownButtonFormField<String>(
+              value: _selectedQualityId,
+              decoration: _inputDecoration(),
+              dropdownColor: _surfaceColor,
+              items: qualities.map((quality) {
+                return DropdownMenuItem<String>(
+                  value: quality.id,
+                  child: Text(quality['name'], style: const TextStyle(color: _textColor)),
+                );
+              }).toList(),
+              onChanged: (value) => setState(() {
+                _selectedQualityId = value;
+                _selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
+              }),
+              style: const TextStyle(color: _textColor),
+              validator: (value) => value == null ? 'Please select a quality' : null,
             );
-          }).toList(),
-          onChanged: (value) => setState(() {
-            _selectedQualityId = value;
-            _selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
-          }),
-          style: const TextStyle(color: _textColor),
-          validator: (value) => value == null ? 'Please select a quality' : null,
-        );
-      },
+          },
+        ),
+      ],
     );
   }
 
-  InputDecoration _inputDecoration(String label) {
+  InputDecoration _inputDecoration() {
     return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: _secondaryTextColor),
       filled: true,
-      fillColor: _surfaceColor,
+      fillColor: _backgroundColor.withOpacity(0.8),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -264,19 +288,22 @@ class _AddItemsState extends State<AddItems> {
   Future<void> _addItem() async {
     if (_formKey.currentState!.validate()) {
       try {
+        int openingStock = int.parse(_openingStockController.text);
         await _items.add({
-          'itemName': _itemNameController.text.trim(), // Trim whitespace
+          'itemName': _itemNameController.text.trim(),
           'purchasePrice': double.parse(_purchasePriceController.text),
           'salePrice': double.parse(_salePriceController.text),
           'length': double.parse(_lengthController.text),
           'width': double.parse(_widthController.text),
           'height': double.parse(_heightController.text),
-          'stockQuantity': int.parse(_stockController.text),
+          'openingStock': openingStock,
+          'stockQuantity': openingStock,
           'covered': _coveredOption,
           'qualityId': _selectedQualityId,
           'qualityName': _selectedQualityName,
           'packagingUnit': _selectedPackagingUnit,
-          'timestamp': FieldValue.serverTimestamp(),
+          'dateCreated': FieldValue.serverTimestamp(),
+          'dateModified': FieldValue.serverTimestamp(),
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Item added successfully')),
@@ -289,6 +316,19 @@ class _AddItemsState extends State<AddItems> {
       }
     }
   }
+
+  @override
+  void dispose() {
+    _itemNameController.dispose();
+    _purchasePriceController.dispose();
+    _salePriceController.dispose();
+    _lengthController.dispose();
+    _widthController.dispose();
+    _heightController.dispose();
+    _stockController.dispose();
+    _openingStockController.dispose();
+    super.dispose();
+  }
 }
 
 class InventoryPage extends StatefulWidget {
@@ -300,7 +340,7 @@ class _InventoryPageState extends State<InventoryPage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _horizontalScrollController = ScrollController();
   String _searchQuery = '';
-  final double _mobileTableWidth = 1200;
+  final double _mobileTableWidth = 1400;
 
   @override
   void dispose() {
@@ -308,8 +348,8 @@ class _InventoryPageState extends State<InventoryPage> {
     _horizontalScrollController.dispose();
     super.dispose();
   }
+
   Future<void> _deleteItem(String id) async {
-    // Show confirmation dialog before deleting
     bool? confirmDelete = await showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
@@ -349,37 +389,13 @@ class _InventoryPageState extends State<InventoryPage> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'CANCEL',
-                      style: TextStyle(
-                        color: _secondaryTextColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: const Text('CANCEL', style: TextStyle(color: _secondaryTextColor, fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'DELETE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    child: const Text('DELETE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
@@ -404,6 +420,7 @@ class _InventoryPageState extends State<InventoryPage> {
     final TextEditingController purchaseController = TextEditingController(text: item['purchasePrice'].toString());
     final TextEditingController saleController = TextEditingController(text: item['salePrice'].toString());
     final TextEditingController stockController = TextEditingController(text: item['stockQuantity'].toString());
+    final TextEditingController openingStockController = TextEditingController(text: item['openingStock'].toString());
     final TextEditingController lengthController = TextEditingController(text: item['length'].toString());
     final TextEditingController widthController = TextEditingController(text: item['width'].toString());
     final TextEditingController heightController = TextEditingController(text: item['height'].toString());
@@ -423,7 +440,7 @@ class _InventoryPageState extends State<InventoryPage> {
             backgroundColor: _surfaceColor,
             insetPadding: const EdgeInsets.all(24),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: SingleChildScrollView( // Wrap the content in a SingleChildScrollView
+            child: SingleChildScrollView(
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -440,65 +457,84 @@ class _InventoryPageState extends State<InventoryPage> {
                       const Text('Edit Item',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
                       const SizedBox(height: 20),
-                      // Covered Dropdown
-                      DropdownButtonFormField<String>(
-                        value: selectedCovered,
-                        decoration: _inputDecoration('Covered Option'),
-                        items: const [
-                          DropdownMenuItem(value: "Yes", child: Text("Covered")),
-                          DropdownMenuItem(value: "-", child: Text("Uncovered")),
-                        ],
-                        onChanged: (value) => setState(() => selectedCovered = value),
-                        validator: (value) => value == null ? 'Required field' : null,
-                      ),
-                      const SizedBox(height: 16),
-                      // Quality Dropdown
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance.collection('qualities').snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const CircularProgressIndicator(color: _primaryColor);
-                          }
-                          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                            return const Text('No qualities available', style: TextStyle(color: _textColor));
-                          }
-                          final qualities = snapshot.data!.docs;
-                          return DropdownButtonFormField<String>(
-                            value: selectedQualityId,
-                            decoration: _inputDecoration('Quality'),
-                            items: qualities.map((quality) {
-                              return DropdownMenuItem<String>(
-                                value: quality.id,
-                                child: Text(quality['name'], style: const TextStyle(color: _textColor)),
-                              );
-                            }).toList(),
-                            onChanged: (value) => setState(() {
-                              selectedQualityId = value;
-                              selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
-                            }),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Covered Option', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: selectedCovered,
+                            decoration: _inputDecoration(),
+                            items: const [
+                              DropdownMenuItem(value: "Yes", child: Text("Covered")),
+                              DropdownMenuItem(value: "-", child: Text("Uncovered")),
+                            ],
+                            onChanged: (value) => setState(() => selectedCovered = value),
                             validator: (value) => value == null ? 'Required field' : null,
-                          );
-                        },
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
-                      // Packaging Unit Dropdown
-                      DropdownButtonFormField<String>(
-                        value: selectedPackagingUnit,
-                        decoration: _inputDecoration('Packaging Unit'),
-                        items: const [
-                          DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
-                          DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
-                          DropdownMenuItem(value: 'Kilograms', child: Text('Kilograms')),
-                          DropdownMenuItem(value: 'Dozen', child: Text('Dozen')),
-                          DropdownMenuItem(value: 'Grams', child: Text('Grams')),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Quality', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          StreamBuilder<QuerySnapshot>(
+                            stream: FirebaseFirestore.instance.collection('qualities').snapshots(),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const CircularProgressIndicator(color: _primaryColor);
+                              }
+                              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                                return const Text('No qualities available', style: TextStyle(color: _textColor));
+                              }
+                              final qualities = snapshot.data!.docs;
+                              return DropdownButtonFormField<String>(
+                                value: selectedQualityId,
+                                decoration: _inputDecoration(),
+                                items: qualities.map((quality) {
+                                  return DropdownMenuItem<String>(
+                                    value: quality.id,
+                                    child: Text(quality['name'], style: const TextStyle(color: _textColor)),
+                                  );
+                                }).toList(),
+                                onChanged: (value) => setState(() {
+                                  selectedQualityId = value;
+                                  selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
+                                }),
+                                validator: (value) => value == null ? 'Required field' : null,
+                              );
+                            },
+                          ),
                         ],
-                        onChanged: (value) => setState(() => selectedPackagingUnit = value),
-                        validator: (value) => value == null ? 'Required field' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Packaging Unit', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: selectedPackagingUnit,
+                            decoration: _inputDecoration(),
+                            items: const [
+                              DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
+                              DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
+                              DropdownMenuItem(value: 'Kilograms', child: Text('Kilograms')),
+                              DropdownMenuItem(value: 'Dozen', child: Text('Dozen')),
+                              DropdownMenuItem(value: 'Grams', child: Text('Grams')),
+                            ],
+                            onChanged: (value) => setState(() => selectedPackagingUnit = value),
+                            validator: (value) => value == null ? 'Required field' : null,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
                       _buildTextFormField('Item Name', nameController),
                       _buildTextFormField('Purchase Price', purchaseController, isNumeric: true),
                       _buildTextFormField('Sale Price', saleController, isNumeric: true),
+                      _buildTextFormField('Opening Stock', openingStockController, isNumeric: true),
                       _buildTextFormField('Stock Quantity', stockController, isNumeric: true),
                       const SizedBox(height: 16),
                       Row(
@@ -519,6 +555,12 @@ class _InventoryPageState extends State<InventoryPage> {
                         ),
                         onPressed: () async {
                           if (_formKey.currentState!.validate()) {
+                            int newOpeningStock = int.parse(openingStockController.text);
+                            int currentStock = item['stockQuantity'];
+                            int currentOpeningStock = item['openingStock'];
+                            int stockAdjustment = newOpeningStock - currentOpeningStock;
+                            int updatedStock = currentStock + stockAdjustment;
+
                             await FirebaseFirestore.instance
                                 .collection('items')
                                 .doc(item.id)
@@ -526,7 +568,8 @@ class _InventoryPageState extends State<InventoryPage> {
                               'itemName': nameController.text.trim(),
                               'purchasePrice': double.parse(purchaseController.text),
                               'salePrice': double.parse(saleController.text),
-                              'stockQuantity': int.parse(stockController.text),
+                              'openingStock': newOpeningStock,
+                              'stockQuantity': updatedStock,
                               'length': double.parse(lengthController.text),
                               'width': double.parse(widthController.text),
                               'height': double.parse(heightController.text),
@@ -534,6 +577,7 @@ class _InventoryPageState extends State<InventoryPage> {
                               'qualityId': selectedQualityId,
                               'qualityName': selectedQualityName,
                               'packagingUnit': selectedPackagingUnit,
+                              'dateModified': FieldValue.serverTimestamp(),
                             });
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -563,7 +607,7 @@ class _InventoryPageState extends State<InventoryPage> {
         TextFormField(
           controller: controller,
           style: const TextStyle(color: _textColor, fontSize: 14),
-          decoration: _inputDecoration(label),
+          decoration: _inputDecoration(),
           keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) => value!.isEmpty ? 'Required field' : null,
         ),
@@ -573,12 +617,35 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Widget _buildDimensionField(String label, TextEditingController controller) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: TextInputType.number,
-      decoration: _inputDecoration(label),
-      style: const TextStyle(color: _textColor, fontSize: 14),
-      validator: (value) => value!.isEmpty ? 'Required field' : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: _inputDecoration(),
+          style: const TextStyle(color: _textColor, fontSize: 14),
+          validator: (value) => value!.isEmpty ? 'Required field' : null,
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _inputDecoration() {
+    return InputDecoration(
+      filled: true,
+      fillColor: _backgroundColor.withOpacity(0.8),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _primaryColor),
+      ),
     );
   }
 
@@ -615,7 +682,6 @@ class _InventoryPageState extends State<InventoryPage> {
     );
   }
 
-
   Widget _buildDesktopLayout() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('items').snapshots(),
@@ -633,15 +699,12 @@ class _InventoryPageState extends State<InventoryPage> {
           return name.contains(_searchQuery) || quality.contains(_searchQuery);
         }).toList();
 
-        // Two-level sorting: Quality Name -> Item Name
         if (items != null) {
           items.sort((a, b) {
-            // Primary sort by Quality Name
             String aQuality = a['qualityName']?.toLowerCase() ?? '';
             String bQuality = b['qualityName']?.toLowerCase() ?? '';
             int qualityCompare = aQuality.compareTo(bQuality);
 
-            // Secondary sort by Item Name if qualities are equal
             if (qualityCompare == 0) {
               String aItem = a['itemName']?.toLowerCase() ?? '';
               String bItem = b['itemName']?.toLowerCase() ?? '';
@@ -662,7 +725,7 @@ class _InventoryPageState extends State<InventoryPage> {
             SizedBox(height: 8),
             Expanded(
               child: ListView.separated(
-                padding: EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.only(bottom: 16),
                 separatorBuilder: (_, __) => SizedBox(height: 8),
                 itemCount: items.length,
                 itemBuilder: (context, index) => _buildDesktopRow(items[index]),
@@ -703,7 +766,6 @@ class _InventoryPageState extends State<InventoryPage> {
                       return name.contains(_searchQuery) || quality.contains(_searchQuery);
                     }).toList();
 
-                    // Two-level sorting: Quality Name -> Item Name
                     if (items != null) {
                       items.sort((a, b) {
                         String aQuality = a['qualityName']?.toLowerCase() ?? '';
@@ -726,7 +788,7 @@ class _InventoryPageState extends State<InventoryPage> {
 
                     return ListView.separated(
                       physics: BouncingScrollPhysics(),
-                      padding: EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.only(bottom: 16),
                       separatorBuilder: (_, __) => SizedBox(height: 8),
                       itemCount: items.length,
                       itemBuilder: (context, index) => _buildMobileRow(items[index]),
@@ -757,9 +819,11 @@ class _InventoryPageState extends State<InventoryPage> {
             Expanded(child: _HeaderCell('Item Name')),
             Expanded(child: _HeaderCell('Purchase')),
             Expanded(child: _HeaderCell('Sale')),
+            Expanded(child: _HeaderCell('Opening')),
             Expanded(child: _HeaderCell('Stock')),
             Expanded(child: _HeaderCell('Unit')),
             Expanded(child: _HeaderCell('Covered')),
+            Expanded(child: _HeaderCell('Modified')),
             Expanded(child: _HeaderCell('Actions')),
           ],
         ),
@@ -783,9 +847,11 @@ class _InventoryPageState extends State<InventoryPage> {
             _HeaderCell('Item Name', 200),
             _HeaderCell('Purchase', 100),
             _HeaderCell('Sale', 100),
+            _HeaderCell('Opening', 100),
             _HeaderCell('Stock', 100),
             _HeaderCell('Unit', 100),
             _HeaderCell('Covered', 100),
+            _HeaderCell('Modified', 150),
             _HeaderCell('Actions', 150),
           ],
         ),
@@ -794,6 +860,9 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Widget _buildDesktopRow(DocumentSnapshot item) {
+    final dateModified = item['dateModified'] != null
+        ? DateFormat('dd-MM-yyyy').format((item['dateModified'] as Timestamp).toDate())
+        : 'N/A';
     return Container(
       height: 56,
       margin: const EdgeInsets.symmetric(horizontal: 24),
@@ -807,11 +876,13 @@ class _InventoryPageState extends State<InventoryPage> {
         child: Row(
           children: [
             Expanded(child: _DataCell('${item['qualityName']}: ${item['itemName']}')),
-            Expanded(child: _DataCell(item['purchasePrice'].toInt().toString())), // Purchase Price
-            Expanded(child: _DataCell(item['salePrice'].toInt().toString())),    // Sale Price
+            Expanded(child: _DataCell(item['purchasePrice'].toInt().toString())),
+            Expanded(child: _DataCell(item['salePrice'].toInt().toString())),
+            Expanded(child: _DataCell(item['openingStock'].toString())),
             Expanded(child: _DataCell(item['stockQuantity'].toString())),
             Expanded(child: _DataCell(item['packagingUnit'] ?? 'N/A')),
             Expanded(child: _DataCell(item['covered'])),
+            Expanded(child: _DataCell(dateModified)),
             Expanded(child: _ActionCell(
               item,
               150,
@@ -825,6 +896,9 @@ class _InventoryPageState extends State<InventoryPage> {
   }
 
   Widget _buildMobileRow(DocumentSnapshot item) {
+    final dateModified = item['dateModified'] != null
+        ? DateFormat('dd-MM-yyyy').format((item['dateModified'] as Timestamp).toDate())
+        : 'N/A';
     return Container(
       height: 56,
       margin: const EdgeInsets.symmetric(horizontal: 24),
@@ -838,11 +912,13 @@ class _InventoryPageState extends State<InventoryPage> {
         child: Row(
           children: [
             _DataCell('${item['qualityName']}: ${item['itemName']}', 200),
-            _DataCell(item['purchasePrice'].toInt().toString(), 100), // Purchase Price
-            _DataCell(item['salePrice'].toInt().toString(), 100),    // Sale Price
+            _DataCell(item['purchasePrice'].toInt().toString(), 100),
+            _DataCell(item['salePrice'].toInt().toString(), 100),
+            _DataCell(item['openingStock'].toString(), 100),
             _DataCell(item['stockQuantity'].toString(), 100),
             _DataCell(item['packagingUnit'] ?? 'N/A', 100),
             _DataCell(item['covered'], 100),
+            _DataCell(dateModified, 150),
             _ActionCell(
               item,
               150,
@@ -897,24 +973,6 @@ class _InventoryPageState extends State<InventoryPage> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AddItems())),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: _secondaryTextColor),
-      filled: true,
-      fillColor: _surfaceColor,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: _primaryColor),
       ),
     );
   }
