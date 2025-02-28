@@ -52,11 +52,6 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
   void _viewInvoice(DocumentSnapshot invoiceDoc) {
     final invoice = invoiceDoc.data() as Map<String, dynamic>;
-    print('Retrieved Invoice Data: $invoice');
-    print('Retrieved Items: ${invoice['items']}');
-    if (invoice['items'] == null || (invoice['items'] as List).isEmpty) {
-      print('Warning: No items found in invoice ${invoiceDoc.id}');
-    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -689,7 +684,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final _formKey = GlobalKey<FormState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final List<InvoiceItem> _items = [];
-  List<InvoiceItem> _originalItems = [];
+  Map<String, int> _originalQuantities = {}; // Store original quantities by itemId
   double _subtotal = 0.0;
   double _total = 0.0;
   final TextEditingController _invoiceIdController = TextEditingController();
@@ -713,40 +708,28 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   void _initializeExistingInvoice() {
     final invoice = widget.existingInvoice!;
     _invoiceIdController.text = invoice['invoiceId'];
-    _invoiceDateController.text = invoice['invoiceDate']; // Directly use string
-    _receiveDateController.text = invoice['receiveDate']; // Directly use string
+    _invoiceDateController.text = invoice['invoiceDate'];
+    _receiveDateController.text = invoice['receiveDate'];
     _taxController.text = invoice['taxPercentage'].toString();
 
-    _originalItems = (invoice['items'] as List).map((item) => InvoiceItem(
-      itemId: item['itemId'],
-      name: item['name'],
-      quality: item['quality'],
-      packagingUnit: item['packagingUnit'],
-      quantity: (item['quantity'] as num).toInt(),
-      price: (item['price'] as num).toDouble(),
-      discount: (item['discount'] as num).toDouble(),
-      covered: item['isCovered'] ? "Yes" : "No",
-    )).toList();
-
-    _items.addAll(_originalItems);
-    _calculateTotal();
-  }
-
-  String _formatDate(dynamic dateValue) {
-    try {
-      DateTime date;
-      if (dateValue is Timestamp) {
-        date = dateValue.toDate();
-      } else if (dateValue is String) {
-        date = DateFormat('dd-MM-yyyy').parse(dateValue);
-      } else {
-        date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
-      }
-      return DateFormat('dd-MM-yyyy').format(date);
-    } catch (e) {
-      print('Error parsing date: $e');
-      return 'Invalid Date';
+    // Initialize items and original quantities
+    final List<dynamic> invoiceItems = invoice['items'] as List<dynamic>;
+    for (var item in invoiceItems) {
+      final invoiceItem = InvoiceItem(
+        itemId: item['itemId'],
+        name: item['name'],
+        quality: item['quality'],
+        packagingUnit: item['packagingUnit'],
+        quantity: (item['quantity'] as num).toInt(),
+        price: (item['price'] as num).toDouble(),
+        discount: (item['discount'] as num).toDouble(),
+        covered: item['isCovered'] ? "Yes" : "No",
+      );
+      _items.add(invoiceItem);
+      _originalQuantities[invoiceItem.itemId] = invoiceItem.quantity; // Store original quantity
     }
+
+    _calculateTotal();
   }
 
   Future<void> _addItem(Item item) async {
@@ -774,6 +757,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         discount: discount,
         covered: item.covered,
       ));
+      // If this is a new item (not in original), set original quantity to 0
+      if (!_originalQuantities.containsKey(item.id)) {
+        _originalQuantities[item.id] = 0;
+      }
       _calculateTotal();
     });
     Navigator.pop(context);
@@ -782,7 +769,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   void _calculateTotal() {
     _subtotal = _items.fold(
         0.0, (sum, item) => sum + (item.quantity * item.price * (1 - item.discount / 100)));
-    final tax = _subtotal * (double.parse(_taxController.text) / 100);
+    final tax = _subtotal * (double.tryParse(_taxController.text) ?? 0.0) / 100;
     _total = _subtotal + tax;
     setState(() {});
   }
@@ -790,7 +777,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _submitInvoice() async {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
-      print('No items to save');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please add at least one item')),
       );
@@ -800,35 +786,32 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     final invoiceData = {
       'invoiceId': _invoiceIdController.text,
       'company': widget.company,
-      'invoiceDate': _invoiceDateController.text, // Save as "dd-MM-yyyy"
-      'receiveDate': _receiveDateController.text, // Save as "dd-MM-yyyy"
+      'invoiceDate': _invoiceDateController.text,
+      'receiveDate': _receiveDateController.text,
       'items': _items.map((item) => item.toMap()).toList(),
       'subtotal': _subtotal,
       'taxPercentage': double.parse(_taxController.text),
       'taxAmount': _total - _subtotal,
       'total': _total,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': widget.invoiceId == null ? FieldValue.serverTimestamp() : widget.existingInvoice!['createdAt'],
     };
-
-    print('Invoice Data to Save: $invoiceData');
 
     try {
       if (widget.invoiceId != null) {
         await _updateStockQuantities();
         await _firestore.collection('purchaseinvoices').doc(widget.invoiceId).update(invoiceData);
-        print('Updated invoice with ID: ${widget.invoiceId}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invoice updated successfully!')),
+        );
       } else {
         final docRef = await _firestore.collection('purchaseinvoices').add(invoiceData);
         await _updateStockQuantities();
-        print('Saved new invoice with ID: ${docRef.id}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invoice saved successfully!')),
+        );
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invoice saved successfully!')),
-      );
       Navigator.pop(context);
     } catch (e) {
-      print('Error saving invoice: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving invoice: $e')),
       );
@@ -836,18 +819,26 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   }
 
   Future<void> _updateStockQuantities() async {
-    if (widget.invoiceId != null) {
-      for (final item in _originalItems) {
+    for (final item in _items) {
+      final originalQty = _originalQuantities[item.itemId] ?? 0;
+      final newQty = item.quantity;
+      final qtyDifference = newQty - originalQty;
+
+      if (qtyDifference != 0) {
         await _firestore.collection('items').doc(item.itemId).update({
-          'stockQuantity': FieldValue.increment(-item.quantity),
+          'stockQuantity': FieldValue.increment(qtyDifference),
         });
       }
     }
 
-    for (final item in _items) {
-      await _firestore.collection('items').doc(item.itemId).update({
-        'stockQuantity': FieldValue.increment(item.quantity),
-      });
+    // Handle items that were removed
+    for (final originalItemId in _originalQuantities.keys) {
+      if (!_items.any((item) => item.itemId == originalItemId)) {
+        final originalQty = _originalQuantities[originalItemId] ?? 0;
+        await _firestore.collection('items').doc(originalItemId).update({
+          'stockQuantity': FieldValue.increment(-originalQty),
+        });
+      }
     }
   }
 
@@ -1005,8 +996,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   );
 
   Widget _buildItemRow(InvoiceItem item, int index) => GestureDetector(
-    onTap: () =>
-        setState(() => _selectedItemIndex = _selectedItemIndex == index ? null : index),
+    onTap: () => setState(() => _selectedItemIndex = _selectedItemIndex == index ? null : index),
     child: Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1183,8 +1173,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         const SizedBox(height: 24),
         _buildTextField('Challan #', _invoiceIdController),
         const SizedBox(height: 16),
-        _buildTextField('Company', TextEditingController(text: widget.company),
-            enabled: false),
+        _buildTextField('Company', TextEditingController(text: widget.company), enabled: false),
         const SizedBox(height: 16),
         _buildDateField('Invoice Date', _invoiceDateController),
         const SizedBox(height: 16),
@@ -1211,9 +1200,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   );
 
   Widget _buildTextField(String label, TextEditingController controller,
-      {bool isNumeric = false,
-        bool enabled = true,
-        void Function(String)? onChanged}) =>
+      {bool isNumeric = false, bool enabled = true, void Function(String)? onChanged}) =>
       TextFormField(
         controller: controller,
         style: TextStyle(color: _textColor, fontSize: 14),
@@ -1518,7 +1505,6 @@ class InvoiceViewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('InvoiceViewScreen Items: ${items.map((item) => item.toMap()).toList()}');
     return Scaffold(
       appBar: AppBar(
         backgroundColor: _backgroundColor,
@@ -1997,7 +1983,6 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
                       !item.quality.toLowerCase().contains(_searchQuery)) {
                     return const SizedBox.shrink();
                   }
-
                   return GestureDetector(
                     onTap: () => Navigator.pop(context, item),
                     child: Container(

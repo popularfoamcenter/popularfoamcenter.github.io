@@ -185,7 +185,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   void _initializeState() {
     if (widget.invoice != null) {
       _selectedCustomer = {
-        ...widget.invoice!.customer,
+        'id': widget.invoice!.customer['id'] ?? '',
+        'name': widget.invoice!.customer['name'] ?? 'Walking Customer',
         'number': widget.invoice!.customer['number'] ?? '',
       };
       _selectedTransactionType = widget.invoice!.type;
@@ -195,7 +196,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _globalDiscountController.text = _globalDiscount.toString();
       _phoneController.text = _selectedCustomer['number'] ?? '';
       _customCustomerNameController.text = _selectedCustomer['name'] ?? '';
-      _useCustomName = _selectedCustomer['id'] == null || _selectedCustomer['id'].isEmpty;
+      // Set _useCustomName based on whether it's a custom customer (no ID)
+      _useCustomName = _selectedCustomer['id']?.isEmpty ?? true;
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
       }
@@ -203,6 +205,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _selectedCustomer = walkingCustomer;
       _selectedTransactionType = 'Sale';
       _customCustomerNameController.text = 'Walking Customer';
+      _useCustomName = false;
     }
   }
 
@@ -444,25 +447,26 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         ? widget.invoice!.invoiceNumber
         : await _getNextInvoiceNumber();
 
-    // Update _selectedCustomer with custom name if applicable
-    if (_useCustomName) {
-      _selectedCustomer = {
-        'id': '',
-        'name': _customCustomerNameController.text.trim().isEmpty ? 'Walking Customer' : _customCustomerNameController.text.trim(),
-        'number': _phoneController.text.trim(),
-      };
+    // Ensure customer data includes custom name properly
+    final customerData = _useCustomName
+        ? {
+      'id': '',
+      'name': _customCustomerNameController.text.trim().isEmpty
+          ? 'Walking Customer'
+          : _customCustomerNameController.text.trim(),
+      'number': _phoneController.text.trim()
     }
+        : _selectedCustomer;
 
     return await _firestore.runTransaction<Invoice?>((transaction) async {
       try {
         if (isEditing) await _revertStockChanges(transaction, widget.invoice!);
-
         await _validateAndUpdateStock(transaction);
 
         final invoice = Invoice(
           id: invoiceRef.id,
           invoiceNumber: invoiceNumber,
-          customer: _selectedCustomer,
+          customer: customerData, // Use the properly formatted customer data
           type: _selectedTransactionType,
           items: List.from(_cartItems),
           subtotal: subtotal,
@@ -490,7 +494,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         if (viewAfterSave) {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => PointOfSalePage(invoice: invoice)),
+            MaterialPageRoute(builder: (context) => PointOfSalePage(invoice: invoice, isReadOnly: true)),
           );
         }
 
@@ -501,7 +505,6 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       }
     });
   }
-
   Future<void> _printInvoice(Invoice invoice) async {
     try {
       final pdf = pw.Document();
@@ -987,7 +990,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       decoration: BoxDecoration(
           color: _surfaceColor,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)]),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)]
+      ),
       child: Column(children: [
         if (!widget.isReadOnly)
           ElevatedButton.icon(
@@ -1012,7 +1016,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                     if (_useCustomName) {
                       _selectedCustomer = {
                         'id': '',
-                        'name': _customCustomerNameController.text.trim().isEmpty ? 'Walking Customer' : _customCustomerNameController.text.trim(),
+                        'name': _customCustomerNameController.text.trim().isEmpty
+                            ? 'Walking Customer'
+                            : _customCustomerNameController.text.trim(),
                         'number': _phoneController.text.trim(),
                       };
                     } else {
@@ -1025,30 +1031,35 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             ],
           ),
         const SizedBox(height:10),
-        if (_useCustomName && !widget.isReadOnly)
+        if (_useCustomName || widget.isReadOnly)
           TextField(
             controller: _customCustomerNameController,
+            enabled: !widget.isReadOnly,
             decoration: InputDecoration(
               labelText: 'Customer Name',
               filled: true,
               fillColor: _backgroundColor,
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none
+              ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               labelStyle: TextStyle(color: _secondaryTextColor),
             ),
             style: TextStyle(color: _textColor),
             onChanged: (value) {
-              setState(() {
-                _selectedCustomer = {
-                  'id': '',
-                  'name': value.trim().isEmpty ? 'Walking Customer' : value.trim(),
-                  'number': _phoneController.text.trim(),
-                };
-              });
+              if (!widget.isReadOnly && _useCustomName) {
+                setState(() {
+                  _selectedCustomer = {
+                    'id': '',
+                    'name': value.trim().isEmpty ? 'Walking Customer' : value.trim(),
+                    'number': _phoneController.text.trim(),
+                  };
+                });
+              }
             },
           )
-        else
+        else if (!widget.isReadOnly)
           _buildCustomerDropdown(),
         const SizedBox(height: 16),
         _buildTransactionTypeDropdown(),
@@ -1061,17 +1072,21 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                 filled: true,
                 fillColor: _backgroundColor,
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none
+                ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                labelStyle: TextStyle(color: _secondaryTextColor)),
+                labelStyle: TextStyle(color: _secondaryTextColor)
+            ),
             style: TextStyle(color: _textColor),
             onChanged: (value) {
-              if (_useCustomName) {
+              if (_useCustomName && !widget.isReadOnly) {
                 setState(() {
                   _selectedCustomer['number'] = value.trim();
                 });
               }
-            }),
+            }
+        ),
         if (!widget.isReadOnly) const SizedBox(height: 24),
         if (!widget.isReadOnly)
           ElevatedButton.icon(
@@ -1083,9 +1098,10 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 16)),
               icon: const Icon(Icons.arrow_forward_rounded),
-              label: const Text('PROCEED TO PAYMENT'))
-      ]));
-
+              label: const Text('PROCEED TO PAYMENT')
+          )
+      ])
+  );
   Widget _buildCustomerDropdown() => StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('customers').snapshots(),
       builder: (_, snapshot) {

@@ -626,47 +626,182 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       children: [
         Text(
           "Sales Overview",
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF1A1A2F)),
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF1A1A2F),
+          ),
         ),
         const SizedBox(height: 16),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 1,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 2,
-          children: [
-            _buildProfitCard("Today", _profitToday, Colors.green),
-            _buildProfitCard("This Month", _profitMonth, Colors.blue),
-            _buildProfitCard("This Year", _profitYear, Colors.purple),
-          ],
+        Container(
+          height: 300,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.2),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Pie Chart
+              Expanded(
+                flex: 2,
+                child: PieChart(
+                  PieChartData(
+                    sections: _getPieChartSections(),
+                    centerSpaceRadius: 60,
+                    sectionsSpace: 2,
+                    startDegreeOffset: 270,
+                  ),
+                ),
+              ),
+              // Legend
+              Expanded(
+                flex: 1,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLegendItem("Today", Colors.green, _profitToday),
+                    const SizedBox(height: 16),
+                    _buildLegendItem("This Month", Colors.blue, _profitMonth),
+                    const SizedBox(height: 16),
+                    _buildLegendItem("This Year", Colors.purple, _profitYear),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildProfitCard(String period, int profit, Color color) {
+// Helper method to create pie chart sections
+  List<PieChartSectionData> _getPieChartSections() {
+    final total = _profitToday + _profitMonth + _profitYear;
+    if (total == 0) {
+      return [
+        PieChartSectionData(
+          color: Colors.grey.withOpacity(0.3),
+          value: 1,
+          title: "No Data",
+          radius: 50,
+          titleStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ];
+    }
+
+    return [
+      PieChartSectionData(
+        color: Colors.green,
+        value: _profitToday.toDouble(),
+        title: "${((_profitToday / total) * 100).toStringAsFixed(1)}%",
+        radius: 50,
+        titleStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        badgeWidget: _buildBadge(Icons.today, Colors.green),
+        badgePositionPercentageOffset: 1.2,
+      ),
+      PieChartSectionData(
+        color: Colors.blue,
+        value: _profitMonth.toDouble(),
+        title: "${((_profitMonth / total) * 100).toStringAsFixed(1)}%",
+        radius: 50,
+        titleStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        badgeWidget: _buildBadge(Icons.calendar_month, Colors.blue),
+        badgePositionPercentageOffset: 1.2,
+      ),
+      PieChartSectionData(
+        color: Colors.purple,
+        value: _profitYear.toDouble(),
+        title: "${((_profitYear / total) * 100).toStringAsFixed(1)}%",
+        radius: 50,
+        titleStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        badgeWidget: _buildBadge(Icons.calendar_today, Colors.purple),
+        badgePositionPercentageOffset: 1.2,
+      ),
+    ];
+  }
+
+// Helper method to build legend items
+  Widget _buildLegendItem(String title, Color color, int value) {
+    return Row(
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Color(0xFF6C757D),
+            ),
+          ),
+        ),
+        Text(
+          NumberFormat.compact().format(value),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+// Helper method to build badge widgets
+  Widget _buildBadge(IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8)],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(period, style: TextStyle(fontSize: 16, color: const Color(0xFF6C757D))),
-          const SizedBox(height: 8),
-          Text(
-            '${NumberFormat.decimalPattern().format(profit)}/-',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
+      child: Icon(
+        icon,
+        size: 16,
+        color: color,
+      ),
     );
   }
+
 }
 
 class _HourlyTransaction {
