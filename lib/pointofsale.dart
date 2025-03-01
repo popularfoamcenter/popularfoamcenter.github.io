@@ -14,6 +14,7 @@ class CartItem {
   final String itemName;
   final String? covered;
   double qty;
+  final double originalQty;
   String price;
   String discount;
   String total;
@@ -23,6 +24,7 @@ class CartItem {
     required this.itemName,
     this.covered,
     required this.qty,
+    required this.originalQty,
     required this.price,
     required this.discount,
     required this.total,
@@ -33,6 +35,7 @@ class CartItem {
     'item': itemName,
     'covered': covered,
     'qty': qty,
+    'originalQty': originalQty,
     'price': price,
     'discount': discount,
     'total': total,
@@ -43,6 +46,7 @@ class CartItem {
     itemName: map['item'] ?? '',
     covered: map['covered'],
     qty: (map['qty'] is num ? map['qty'].toDouble() : double.tryParse(map['qty'].toString())) ?? 0.0,
+    originalQty: (map['originalQty'] is num ? map['originalQty'].toDouble() : double.tryParse(map['originalQty']?.toString() ?? '0')) ?? (map['qty'] is num ? map['qty'].toDouble() : double.tryParse(map['qty'].toString())) ?? 0.0,
     price: map['price'] ?? '0',
     discount: map['discount'] ?? '0',
     total: map['total'] ?? '0',
@@ -59,6 +63,7 @@ class CartItem {
         itemName: itemName,
         covered: covered,
         qty: qty ?? this.qty,
+        originalQty: originalQty,
         price: price ?? this.price,
         discount: discount ?? this.discount,
         total: total ?? this.total,
@@ -168,7 +173,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   CartItem? _deletedItem;
   int? _deletedIndex;
   String? _returnInvoiceNumber;
-  bool _useCustomName = false; // Toggle for custom name input
+  bool _useCustomName = false;
 
   static const Color _primaryColor = Color(0xFF0D6EFD);
   static const Color _textColor = Color(0xFF2D2D2D);
@@ -190,13 +195,21 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         'number': widget.invoice!.customer['number'] ?? '',
       };
       _selectedTransactionType = widget.invoice!.type;
-      _cartItems = widget.invoice!.items;
+      _cartItems = widget.invoice!.items.map((item) => CartItem(
+        quality: item.quality,
+        itemName: item.itemName,
+        covered: item.covered,
+        qty: item.qty,
+        originalQty: item.qty,
+        price: item.price,
+        discount: item.discount,
+        total: item.total,
+      )).toList();
       _globalDiscount = widget.invoice!.globalDiscount;
       _givenAmountController.text = widget.invoice!.givenAmount.toString();
       _globalDiscountController.text = _globalDiscount.toString();
       _phoneController.text = _selectedCustomer['number'] ?? '';
       _customCustomerNameController.text = _selectedCustomer['name'] ?? '';
-      // Set _useCustomName based on whether it's a custom customer (no ID)
       _useCustomName = _selectedCustomer['id']?.isEmpty ?? true;
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
@@ -224,7 +237,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
 
   double _calculateTotal() => math.max(_calculateSubtotal() - _globalDiscount, 0.0);
 
-  Future<int> _getNextInvoiceNumber() async {
+  Future<int> _incrementInvoiceCounter() async {
     final counterRef = _firestore.collection('settings').doc('invoice_counter');
     return await _firestore.runTransaction<int>((transaction) async {
       final doc = await transaction.get(counterRef);
@@ -250,6 +263,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         itemName: itemName,
         covered: coveredStatus,
         qty: 1.0,
+        originalQty: 0.0,
         price: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
         discount: '0',
         total: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
@@ -355,27 +369,37 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
 
       if (snapshot.docs.isNotEmpty) {
         final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-        final qty = item.qty;
-        if (_selectedTransactionType != 'Return' && stock < qty) return true;
+        final qtyChange = item.qty - item.originalQty;
+        if (_selectedTransactionType != 'Return' && qtyChange > 0 && stock < qtyChange) {
+          return true; // Insufficient stock for the additional quantity
+        }
       }
     }
     return false;
   }
 
   Future<void> _revertStockChanges(Transaction transaction, Invoice oldInvoice) async {
-    for (final item in oldInvoice.items) {
-      final snapshot = await _firestore
-          .collection('items')
-          .where('itemName', isEqualTo: item.itemName)
-          .where('qualityName', isEqualTo: item.quality)
-          .limit(1)
-          .get();
-      if (snapshot.docs.isNotEmpty) {
-        final ref = snapshot.docs.first.reference;
-        final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-        final qty = item.qty;
-        final adjustment = oldInvoice.type == 'Return' ? -qty : qty;
-        transaction.update(ref, {'stockQuantity': stock + adjustment});
+    // Only revert if quantities have changed
+    for (final oldItem in oldInvoice.items) {
+      final newItem = _cartItems.firstWhere(
+            (item) => item.itemName == oldItem.itemName && item.quality == oldItem.quality,
+        orElse: () => oldItem, // If item removed, use oldItem for reversion
+      );
+      final qtyChange = newItem.qty - oldItem.qty;
+
+      if (qtyChange != 0) { // Only revert if qty changed
+        final snapshot = await _firestore
+            .collection('items')
+            .where('itemName', isEqualTo: oldItem.itemName)
+            .where('qualityName', isEqualTo: oldItem.quality)
+            .limit(1)
+            .get();
+        if (snapshot.docs.isNotEmpty) {
+          final ref = snapshot.docs.first.reference;
+          final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
+          final adjustment = oldInvoice.type == 'Return' ? -oldItem.qty : oldItem.qty;
+          transaction.update(ref, {'stockQuantity': stock + adjustment});
+        }
       }
     }
   }
@@ -394,11 +418,13 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       if (snapshot.docs.isEmpty) throw Exception('Item ${item.itemName} not found');
       final ref = snapshot.docs.first.reference;
       final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-      final qty = item.qty;
-      final newStock = _selectedTransactionType == 'Return' ? stock + qty : stock - qty;
+      final qtyChange = item.qty - item.originalQty;
 
-      if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
-      transaction.update(ref, {'stockQuantity': newStock});
+      if (qtyChange != 0) { // Only update stock if quantity changes
+        final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
+        if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
+        transaction.update(ref, {'stockQuantity': newStock});
+      }
     }
   }
 
@@ -443,68 +469,103 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     final invoiceRef = isEditing
         ? _firestore.collection('invoices').doc(widget.invoice!.id)
         : _firestore.collection('invoices').doc();
-    final invoiceNumber = isEditing
-        ? widget.invoice!.invoiceNumber
-        : await _getNextInvoiceNumber();
+    final invoiceNumber = isEditing ? widget.invoice!.invoiceNumber : 0;
 
-    // Ensure customer data includes custom name properly
-    final customerData = _useCustomName
-        ? {
-      'id': '',
-      'name': _customCustomerNameController.text.trim().isEmpty
-          ? 'Walking Customer'
-          : _customCustomerNameController.text.trim(),
-      'number': _phoneController.text.trim()
-    }
-        : _selectedCustomer;
+    // Check if only payment details changed
+    bool onlyPaymentChanged = isEditing &&
+        _cartItems.every((item) => item.qty == item.originalQty) &&
+        (subtotal != widget.invoice!.subtotal ||
+            _globalDiscount != widget.invoice!.globalDiscount ||
+            givenAmount != widget.invoice!.givenAmount);
 
-    return await _firestore.runTransaction<Invoice?>((transaction) async {
-      try {
-        if (isEditing) await _revertStockChanges(transaction, widget.invoice!);
-        await _validateAndUpdateStock(transaction);
-
-        final invoice = Invoice(
-          id: invoiceRef.id,
-          invoiceNumber: invoiceNumber,
-          customer: customerData, // Use the properly formatted customer data
-          type: _selectedTransactionType,
-          items: List.from(_cartItems),
-          subtotal: subtotal,
-          globalDiscount: _globalDiscount,
-          total: total,
-          givenAmount: givenAmount,
-          returnAmount: math.max(givenAmount - total, 0),
-          balanceDue: math.max(total - givenAmount, 0),
-          timestamp: FieldValue.serverTimestamp(),
-        );
-
-        isEditing
-            ? transaction.update(invoiceRef, invoice.toMap())
-            : transaction.set(invoiceRef, invoice.toMap());
-
-        setState(() {
-          _cartItems.clear();
-          _globalDiscount = 0;
-          _givenAmountController.clear();
-          _showPaymentDialog = false;
-        });
-
-        _showSnackBar('Transaction ${isEditing ? 'updated' : 'saved'}', Colors.green);
-
-        if (viewAfterSave) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => PointOfSalePage(invoice: invoice, isReadOnly: true)),
-          );
-        }
-
-        return invoice;
-      } catch (e) {
-        _showSnackBar('Transaction failed: $e', Colors.red);
-        return null;
+    final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
+      if (isEditing && !onlyPaymentChanged) {
+        await _revertStockChanges(transaction, widget.invoice!);
       }
+      if (!onlyPaymentChanged) {
+        await _validateAndUpdateStock(transaction);
+      }
+
+      final customerData = _useCustomName
+          ? {
+        'id': '',
+        'name': _customCustomerNameController.text.trim().isEmpty
+            ? 'Walking Customer'
+            : _customCustomerNameController.text.trim(),
+        'number': _phoneController.text.trim()
+      }
+          : _selectedCustomer;
+
+      final tempInvoice = Invoice(
+        id: invoiceRef.id,
+        invoiceNumber: invoiceNumber,
+        customer: customerData,
+        type: _selectedTransactionType,
+        items: List.from(_cartItems),
+        subtotal: subtotal,
+        globalDiscount: _globalDiscount,
+        total: total,
+        givenAmount: givenAmount,
+        returnAmount: math.max(givenAmount - total, 0),
+        balanceDue: math.max(total - givenAmount, 0),
+        timestamp: FieldValue.serverTimestamp(),
+      );
+
+      isEditing
+          ? transaction.update(invoiceRef, tempInvoice.toMap())
+          : transaction.set(invoiceRef, tempInvoice.toMap());
+
+      return tempInvoice;
+    }).catchError((e) {
+      _showSnackBar('Transaction failed: $e', Colors.red);
+      throw e;
     });
+
+    try {
+      Invoice finalInvoice = invoice;
+      if (!isEditing) {
+        final newInvoiceNumber = await _incrementInvoiceCounter();
+        final updatedInvoice = Invoice(
+          id: invoiceRef.id,
+          invoiceNumber: newInvoiceNumber,
+          customer: invoice.customer,
+          type: invoice.type,
+          items: invoice.items,
+          subtotal: invoice.subtotal,
+          globalDiscount: invoice.globalDiscount,
+          total: invoice.total,
+          givenAmount: invoice.givenAmount,
+          returnAmount: invoice.returnAmount,
+          balanceDue: invoice.balanceDue,
+          timestamp: invoice.timestamp,
+        );
+        await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
+        finalInvoice = updatedInvoice;
+      }
+
+      setState(() {
+        _cartItems.clear();
+        _globalDiscount = 0;
+        _givenAmountController.clear();
+        _showPaymentDialog = false;
+      });
+
+      _showSnackBar('Transaction ${isEditing ? 'updated' : 'saved'}', Colors.green);
+
+      if (viewAfterSave) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => PointOfSalePage(invoice: finalInvoice, isReadOnly: true)),
+        );
+      }
+
+      return finalInvoice;
+    } catch (e) {
+      _showSnackBar('Failed to update invoice number: $e', Colors.red);
+      return invoice;
+    }
   }
+
   Future<void> _printInvoice(Invoice invoice) async {
     try {
       final pdf = pw.Document();
@@ -845,6 +906,12 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             child: Center(
                 child: Text('Stock',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+        if (!widget.isReadOnly)
+          SizedBox(
+              width: 40,
+              child: Center(
+                  child: Text('Del',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
       ],
     ),
   );
@@ -922,6 +989,18 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                     style: TextStyle(
                         color: _textColor, fontWeight: FontWeight.bold, fontSize: 14)))),
         Expanded(flex: 1, child: Center(child: _buildStockIndicator(item))),
+        if (!widget.isReadOnly)
+          SizedBox(
+            width: 40,
+            child: Center(
+              child: IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _removeItem(index),
+              ),
+            ),
+          ),
       ],
     ),
   );
@@ -1102,6 +1181,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           )
       ])
   );
+
   Widget _buildCustomerDropdown() => StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('customers').snapshots(),
       builder: (_, snapshot) {
@@ -1359,55 +1439,55 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     await showDialog(
         context: context,
         builder: (_) => StatefulBuilder(
-        builder: (context, setState) => Dialog(
-            backgroundColor: _backgroundColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                    color: _surfaceColor,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)
-                    ]),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                          hintText: 'Search inventory...',
-                          filled: true,
-                          fillColor: _backgroundColor,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          suffixIcon: const Icon(Icons.search, color: Color(0xFF6C757D))),
-                      onChanged: (value) => setState(() => _searchQuery = value.toLowerCase())),
-                  const SizedBox(height: 16),
-                  _buildInventoryHeader(),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.6,
-                      child: StreamBuilder<QuerySnapshot>(
-                          stream: _firestore.collection('items').snapshots(),
-                          builder: (_, snapshot) {
-                            if (!snapshot.hasData)
-                              return const Center(child: CircularProgressIndicator());
-                            final items = snapshot.data!.docs.where((doc) {
-                              final data = doc.data() as Map<String, dynamic>;
-                              return data['itemName']
-                                  .toString()
-                                  .toLowerCase()
-                                  .contains(_searchQuery) ||
-                                  data['qualityName'].toString().toLowerCase().contains(_searchQuery);
-                            }).toList();
-                            return ListView.separated(
-                                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                                itemCount: items.length,
-                                itemBuilder: (_, index) =>
-                                    _buildInventoryItem(items[index].data() as Map<String, dynamic>));
-                          }))
-                ])))));
+            builder: (context, setState) => Dialog(
+                backgroundColor: _backgroundColor,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                        color: _surfaceColor,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)
+                        ]),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      TextField(
+                          controller: _searchController,
+                          autofocus: true,
+                          decoration: InputDecoration(
+                              hintText: 'Search inventory...',
+                              filled: true,
+                              fillColor: _backgroundColor,
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              suffixIcon: const Icon(Icons.search, color: Color(0xFF6C757D))),
+                          onChanged: (value) => setState(() => _searchQuery = value.toLowerCase())),
+                      const SizedBox(height: 16),
+                      _buildInventoryHeader(),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: StreamBuilder<QuerySnapshot>(
+                              stream: _firestore.collection('items').snapshots(),
+                              builder: (_, snapshot) {
+                                if (!snapshot.hasData)
+                                  return const Center(child: CircularProgressIndicator());
+                                final items = snapshot.data!.docs.where((doc) {
+                                  final data = doc.data() as Map<String, dynamic>;
+                                  return data['itemName']
+                                      .toString()
+                                      .toLowerCase()
+                                      .contains(_searchQuery) ||
+                                      data['qualityName'].toString().toLowerCase().contains(_searchQuery);
+                                }).toList();
+                                return ListView.separated(
+                                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                    itemCount: items.length,
+                                    itemBuilder: (_, index) =>
+                                        _buildInventoryItem(items[index].data() as Map<String, dynamic>));
+                              }))
+                    ])))));
   }
 
   Widget _buildInventoryHeader() => Container(

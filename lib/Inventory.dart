@@ -3,12 +3,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
 
-// Color Scheme
+import 'Home.dart'; // Assuming Home.dart contains the HomePage class
+
+// Color Scheme for Light Mode
 const Color _primaryColor = Color(0xFF0D6EFD);
 const Color _textColor = Color(0xFF2D2D2D);
 const Color _secondaryTextColor = Color(0xFF4A4A4A);
 const Color _backgroundColor = Color(0xFFF8F9FA);
 const Color _surfaceColor = Colors.white;
+
+// Color Scheme for Dark Mode
+const Color _darkBackgroundColor = Color(0xFF1A1A2F);
+const Color _darkSurfaceColor = Color(0xFF252541);
+const Color _darkTextColor = Colors.white;
+const Color _darkSecondaryTextColor = Color(0xFFB0B0C0);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,12 +33,16 @@ class MyApp extends StatelessWidget {
         primaryColor: _primaryColor,
         scaffoldBackgroundColor: _backgroundColor,
       ),
-      home: InventoryPage(),
+      home: HomePage(), // Changed to HomePage as the entry point
     );
   }
 }
 
 class AddItems extends StatefulWidget {
+  final bool isDarkMode;
+
+  const AddItems({required this.isDarkMode, super.key});
+
   @override
   _AddItemsState createState() => _AddItemsState();
 }
@@ -58,12 +70,12 @@ class _AddItemsState extends State<AddItems> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Item', style: TextStyle(color: _textColor)),
-        backgroundColor: _backgroundColor,
+        title: Text('Add Item', style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor)),
+        backgroundColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: _textColor),
+        iconTheme: IconThemeData(color: widget.isDarkMode ? _darkTextColor : _textColor),
       ),
-      backgroundColor: _backgroundColor,
+      backgroundColor: widget.isDarkMode ? _darkBackgroundColor : _backgroundColor,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -84,8 +96,8 @@ class _AddItemsState extends State<AddItems> {
                 _buildTextFormField('Item Name', _itemNameController),
                 _buildTextFormField('Purchase Price', _purchasePriceController, isNumeric: true),
                 _buildTextFormField('Sale Price', _salePriceController, isNumeric: true),
-                _buildTextFormField('Opening Stock', _openingStockController, isNumeric: true),
-                _buildTextFormField('Stock Quantity', _stockController, isNumeric: true),
+                _buildTextFormField('OP. Stock', _openingStockController, isNumeric: true),
+                _buildTextFormField('C. Stock', _stockController, isNumeric: true),
               ]),
               const SizedBox(height: 24),
               _buildFormSection('Dimensions', [
@@ -112,18 +124,27 @@ class _AddItemsState extends State<AddItems> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _surfaceColor,
+        color: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(
+          Text(
+            title,
+            style: TextStyle(
               color: _primaryColor,
               fontSize: 16,
-              fontWeight: FontWeight.w600
-          )),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -135,11 +156,21 @@ class _AddItemsState extends State<AddItems> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
-          style: const TextStyle(color: _textColor, fontSize: 14),
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+          ),
           decoration: _inputDecoration(),
           keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) => value!.isEmpty ? 'Required field' : null,
@@ -153,13 +184,23 @@ class _AddItemsState extends State<AddItems> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           keyboardType: TextInputType.number,
           decoration: _inputDecoration(),
-          style: const TextStyle(color: _textColor, fontSize: 14),
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+          ),
           validator: (value) => value!.isEmpty ? 'Required field' : null,
         ),
       ],
@@ -170,12 +211,19 @@ class _AddItemsState extends State<AddItems> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Packaging Unit', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          'Packaging Unit',
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _selectedPackagingUnit,
           decoration: _inputDecoration(),
-          dropdownColor: _surfaceColor,
+          dropdownColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
           items: const [
             DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
             DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
@@ -184,7 +232,7 @@ class _AddItemsState extends State<AddItems> {
             DropdownMenuItem(value: 'Grams', child: Text('Grams')),
           ],
           onChanged: (value) => setState(() => _selectedPackagingUnit = value),
-          style: const TextStyle(color: _textColor),
+          style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
           validator: (value) => value == null ? 'Please select a unit' : null,
         ),
       ],
@@ -195,18 +243,25 @@ class _AddItemsState extends State<AddItems> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Covered Option', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          'Covered Option',
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _coveredOption,
           decoration: _inputDecoration(),
-          dropdownColor: _surfaceColor,
+          dropdownColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
           items: const [
             DropdownMenuItem(value: "Yes", child: Text("Covered")),
             DropdownMenuItem(value: "-", child: Text("Uncovered")),
           ],
           onChanged: (value) => setState(() => _coveredOption = value),
-          style: const TextStyle(color: _textColor),
+          style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
           validator: (value) => value == null ? 'Please select an option' : null,
         ),
       ],
@@ -217,7 +272,14 @@ class _AddItemsState extends State<AddItems> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Quality', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          'Quality',
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         StreamBuilder<QuerySnapshot>(
           stream: _qualities.snapshots(),
@@ -226,25 +288,31 @@ class _AddItemsState extends State<AddItems> {
               return const CircularProgressIndicator(color: _primaryColor);
             }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Text('No qualities available', style: TextStyle(color: _textColor));
+              return Text(
+                'No qualities available',
+                style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
+              );
             }
 
             final qualities = snapshot.data!.docs;
             return DropdownButtonFormField<String>(
               value: _selectedQualityId,
               decoration: _inputDecoration(),
-              dropdownColor: _surfaceColor,
+              dropdownColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
               items: qualities.map((quality) {
                 return DropdownMenuItem<String>(
                   value: quality.id,
-                  child: Text(quality['name'], style: const TextStyle(color: _textColor)),
+                  child: Text(
+                    quality['name'],
+                    style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
+                  ),
                 );
               }).toList(),
               onChanged: (value) => setState(() {
                 _selectedQualityId = value;
                 _selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
               }),
-              style: const TextStyle(color: _textColor),
+              style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
               validator: (value) => value == null ? 'Please select a quality' : null,
             );
           },
@@ -256,7 +324,7 @@ class _AddItemsState extends State<AddItems> {
   InputDecoration _inputDecoration() {
     return InputDecoration(
       filled: true,
-      fillColor: _backgroundColor.withOpacity(0.8),
+      fillColor: widget.isDarkMode ? _darkBackgroundColor.withOpacity(0.8) : _backgroundColor.withOpacity(0.8),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -332,6 +400,11 @@ class _AddItemsState extends State<AddItems> {
 }
 
 class InventoryPage extends StatefulWidget {
+  final bool isDarkMode;
+  final VoidCallback toggleDarkMode;
+
+  const InventoryPage({required this.isDarkMode, required this.toggleDarkMode, super.key});
+
   @override
   _InventoryPageState createState() => _InventoryPageState();
 }
@@ -340,7 +413,7 @@ class _InventoryPageState extends State<InventoryPage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _horizontalScrollController = ScrollController();
   String _searchQuery = '';
-  final double _mobileTableWidth = 1400;
+  final double _mobileTableWidth = 1620; // Increased to accommodate wider Item Name and gap
 
   @override
   void dispose() {
@@ -353,33 +426,39 @@ class _InventoryPageState extends State<InventoryPage> {
     bool? confirmDelete = await showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
-        backgroundColor: _surfaceColor,
+        backgroundColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         insetPadding: const EdgeInsets.all(24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: _surfaceColor,
+            color: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+            boxShadow: [
+              BoxShadow(
+                color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'Delete Item',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: _textColor,
+                  color: widget.isDarkMode ? _darkTextColor : _textColor,
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Are you sure you want to delete this item? This action cannot be undone.',
                 style: TextStyle(
-                  color: _secondaryTextColor,
+                  color: widget.isDarkMode ? _darkSecondaryTextColor : _secondaryTextColor,
                   fontSize: 14,
                 ),
               ),
@@ -389,7 +468,13 @@ class _InventoryPageState extends State<InventoryPage> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: const Text('CANCEL', style: TextStyle(color: _secondaryTextColor, fontWeight: FontWeight.w600)),
+                    child: Text(
+                      'CANCEL',
+                      style: TextStyle(
+                        color: widget.isDarkMode ? _darkSecondaryTextColor : _secondaryTextColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
@@ -431,22 +516,29 @@ class _InventoryPageState extends State<InventoryPage> {
     String? selectedQualityName = item['qualityName'];
 
     final _formKey = GlobalKey<FormState>();
+    final int initialStockQuantity = item['stockQuantity'];
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return Dialog(
-            backgroundColor: _surfaceColor,
+            backgroundColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
             insetPadding: const EdgeInsets.all(24),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: SingleChildScrollView(
               child: Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: _surfaceColor,
+                  color: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: Form(
                   key: _formKey,
@@ -454,22 +546,37 @@ class _InventoryPageState extends State<InventoryPage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('Edit Item',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+                      Text(
+                        'Edit Item',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: widget.isDarkMode ? _darkTextColor : _textColor,
+                        ),
+                      ),
                       const SizedBox(height: 20),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Covered Option', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+                          Text(
+                            'Covered Option',
+                            style: TextStyle(
+                              color: widget.isDarkMode ? _darkTextColor : _textColor,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String>(
                             value: selectedCovered,
                             decoration: _inputDecoration(),
+                            dropdownColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
                             items: const [
                               DropdownMenuItem(value: "Yes", child: Text("Covered")),
                               DropdownMenuItem(value: "-", child: Text("Uncovered")),
                             ],
                             onChanged: (value) => setState(() => selectedCovered = value),
+                            style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
                             validator: (value) => value == null ? 'Required field' : null,
                           ),
                         ],
@@ -478,7 +585,14 @@ class _InventoryPageState extends State<InventoryPage> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Quality', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+                          Text(
+                            'Quality',
+                            style: TextStyle(
+                              color: widget.isDarkMode ? _darkTextColor : _textColor,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           StreamBuilder<QuerySnapshot>(
                             stream: FirebaseFirestore.instance.collection('qualities').snapshots(),
@@ -487,22 +601,30 @@ class _InventoryPageState extends State<InventoryPage> {
                                 return const CircularProgressIndicator(color: _primaryColor);
                               }
                               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                                return const Text('No qualities available', style: TextStyle(color: _textColor));
+                                return Text(
+                                  'No qualities available',
+                                  style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
+                                );
                               }
                               final qualities = snapshot.data!.docs;
                               return DropdownButtonFormField<String>(
                                 value: selectedQualityId,
                                 decoration: _inputDecoration(),
+                                dropdownColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
                                 items: qualities.map((quality) {
                                   return DropdownMenuItem<String>(
                                     value: quality.id,
-                                    child: Text(quality['name'], style: const TextStyle(color: _textColor)),
+                                    child: Text(
+                                      quality['name'],
+                                      style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
+                                    ),
                                   );
                                 }).toList(),
                                 onChanged: (value) => setState(() {
                                   selectedQualityId = value;
                                   selectedQualityName = qualities.firstWhere((q) => q.id == value)['name'];
                                 }),
+                                style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
                                 validator: (value) => value == null ? 'Required field' : null,
                               );
                             },
@@ -513,11 +635,19 @@ class _InventoryPageState extends State<InventoryPage> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Packaging Unit', style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+                          Text(
+                            'Packaging Unit',
+                            style: TextStyle(
+                              color: widget.isDarkMode ? _darkTextColor : _textColor,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<String>(
                             value: selectedPackagingUnit,
                             decoration: _inputDecoration(),
+                            dropdownColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
                             items: const [
                               DropdownMenuItem(value: 'Pieces', child: Text('Pieces')),
                               DropdownMenuItem(value: 'Mètres', child: Text('Mètres')),
@@ -526,6 +656,7 @@ class _InventoryPageState extends State<InventoryPage> {
                               DropdownMenuItem(value: 'Grams', child: Text('Grams')),
                             ],
                             onChanged: (value) => setState(() => selectedPackagingUnit = value),
+                            style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
                             validator: (value) => value == null ? 'Required field' : null,
                           ),
                         ],
@@ -534,8 +665,8 @@ class _InventoryPageState extends State<InventoryPage> {
                       _buildTextFormField('Item Name', nameController),
                       _buildTextFormField('Purchase Price', purchaseController, isNumeric: true),
                       _buildTextFormField('Sale Price', saleController, isNumeric: true),
-                      _buildTextFormField('Opening Stock', openingStockController, isNumeric: true),
-                      _buildTextFormField('Stock Quantity', stockController, isNumeric: true),
+                      _buildTextFormField('OP. Stock', openingStockController, isNumeric: true),
+                      _buildTextFormField('C. Stock', stockController, isNumeric: true),
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -558,13 +689,15 @@ class _InventoryPageState extends State<InventoryPage> {
                             int newOpeningStock = int.parse(openingStockController.text);
                             int currentStock = item['stockQuantity'];
                             int currentOpeningStock = item['openingStock'];
-                            int stockAdjustment = newOpeningStock - currentOpeningStock;
-                            int updatedStock = currentStock + stockAdjustment;
+                            int newStockQuantity = int.parse(stockController.text);
 
-                            await FirebaseFirestore.instance
-                                .collection('items')
-                                .doc(item.id)
-                                .update({
+                            int stockAdjustment = newOpeningStock - currentOpeningStock;
+                            int calculatedStock = currentStock + stockAdjustment;
+                            int updatedStock = (newStockQuantity != initialStockQuantity)
+                                ? newStockQuantity
+                                : calculatedStock;
+
+                            await FirebaseFirestore.instance.collection('items').doc(item.id).update({
                               'itemName': nameController.text.trim(),
                               'purchasePrice': double.parse(purchaseController.text),
                               'salePrice': double.parse(saleController.text),
@@ -596,17 +729,36 @@ class _InventoryPageState extends State<InventoryPage> {
         },
       ),
     );
+
+    nameController.dispose();
+    purchaseController.dispose();
+    saleController.dispose();
+    stockController.dispose();
+    openingStockController.dispose();
+    lengthController.dispose();
+    widthController.dispose();
+    heightController.dispose();
   }
 
   Widget _buildTextFormField(String label, TextEditingController controller, {bool isNumeric = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
-          style: const TextStyle(color: _textColor, fontSize: 14),
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+          ),
           decoration: _inputDecoration(),
           keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) => value!.isEmpty ? 'Required field' : null,
@@ -620,13 +772,23 @@ class _InventoryPageState extends State<InventoryPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           keyboardType: TextInputType.number,
           decoration: _inputDecoration(),
-          style: const TextStyle(color: _textColor, fontSize: 14),
+          style: TextStyle(
+            color: widget.isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+          ),
           validator: (value) => value!.isEmpty ? 'Required field' : null,
         ),
       ],
@@ -636,7 +798,7 @@ class _InventoryPageState extends State<InventoryPage> {
   InputDecoration _inputDecoration() {
     return InputDecoration(
       filled: true,
-      fillColor: _backgroundColor.withOpacity(0.8),
+      fillColor: widget.isDarkMode ? _darkBackgroundColor.withOpacity(0.8) : _backgroundColor.withOpacity(0.8),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -655,12 +817,12 @@ class _InventoryPageState extends State<InventoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inventory', style: TextStyle(color: _textColor)),
-        backgroundColor: _backgroundColor,
+        title: Text('Inventory', style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor)),
+        backgroundColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: _textColor),
+        iconTheme: IconThemeData(color: widget.isDarkMode ? _darkTextColor : _textColor),
       ),
-      backgroundColor: _backgroundColor,
+      backgroundColor: widget.isDarkMode ? _darkBackgroundColor : _backgroundColor,
       body: Column(
         children: [
           Padding(
@@ -690,7 +852,9 @@ class _InventoryPageState extends State<InventoryPage> {
           return Center(child: CircularProgressIndicator(color: _primaryColor));
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
+          return Center(
+              child: Text('Error: ${snapshot.error}',
+                  style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor)));
         }
 
         final items = snapshot.data?.docs.where((doc) {
@@ -716,7 +880,8 @@ class _InventoryPageState extends State<InventoryPage> {
         }
 
         if (items == null || items.isEmpty) {
-          return Center(child: Text('No items found', style: TextStyle(color: _textColor)));
+          return Center(
+              child: Text('No items found', style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor)));
         }
 
         return Column(
@@ -757,7 +922,9 @@ class _InventoryPageState extends State<InventoryPage> {
                       return Center(child: CircularProgressIndicator(color: _primaryColor));
                     }
                     if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
+                      return Center(
+                          child: Text('Error: ${snapshot.error}',
+                              style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor)));
                     }
 
                     final items = snapshot.data?.docs.where((doc) {
@@ -783,7 +950,9 @@ class _InventoryPageState extends State<InventoryPage> {
                     }
 
                     if (items == null || items.isEmpty) {
-                      return Center(child: Text('No items found', style: TextStyle(color: _textColor)));
+                      return Center(
+                          child: Text('No items found',
+                              style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor)));
                     }
 
                     return ListView.separated(
@@ -810,17 +979,24 @@ class _InventoryPageState extends State<InventoryPage> {
       decoration: BoxDecoration(
         color: _primaryColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Expanded(child: _HeaderCell('Item Name')),
+            Expanded(flex: 2, child: _HeaderCell('Item Name')), // Increased flex for more space
+            SizedBox(width: 20), // Gap after Item Name
             Expanded(child: _HeaderCell('Purchase')),
             Expanded(child: _HeaderCell('Sale')),
-            Expanded(child: _HeaderCell('Opening')),
-            Expanded(child: _HeaderCell('Stock')),
+            Expanded(child: _HeaderCell('OP. Stock')),
+            Expanded(child: _HeaderCell('C. Stock')),
             Expanded(child: _HeaderCell('Unit')),
             Expanded(child: _HeaderCell('Covered')),
             Expanded(child: _HeaderCell('Modified')),
@@ -838,17 +1014,24 @@ class _InventoryPageState extends State<InventoryPage> {
       decoration: BoxDecoration(
         color: _primaryColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            _HeaderCell('Item Name', 200),
+            _HeaderCell('Item Name', 400), // Increased width to 400
+            SizedBox(width: 20), // Gap after Item Name
             _HeaderCell('Purchase', 100),
             _HeaderCell('Sale', 100),
-            _HeaderCell('Opening', 100),
-            _HeaderCell('Stock', 100),
+            _HeaderCell('OP. Stock', 100),
+            _HeaderCell('C. Stock', 100),
             _HeaderCell('Unit', 100),
             _HeaderCell('Covered', 100),
             _HeaderCell('Modified', 150),
@@ -867,15 +1050,22 @@ class _InventoryPageState extends State<InventoryPage> {
       height: 56,
       margin: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
-        color: _surfaceColor,
+        color: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Expanded(child: _DataCell('${item['qualityName']}: ${item['itemName']}')),
+            Expanded(flex: 2, child: _DataCell('${item['qualityName']}: ${item['itemName']}')),
+            SizedBox(width: 20), // Gap after Item Name
             Expanded(child: _DataCell(item['purchasePrice'].toInt().toString())),
             Expanded(child: _DataCell(item['salePrice'].toInt().toString())),
             Expanded(child: _DataCell(item['openingStock'].toString())),
@@ -883,12 +1073,14 @@ class _InventoryPageState extends State<InventoryPage> {
             Expanded(child: _DataCell(item['packagingUnit'] ?? 'N/A')),
             Expanded(child: _DataCell(item['covered'])),
             Expanded(child: _DataCell(dateModified)),
-            Expanded(child: _ActionCell(
-              item,
-              150,
-              onEdit: (item) => _showEditDialog(item),
-              onDelete: (id) => _deleteItem(id),
-            )),
+            Expanded(
+              child: _ActionCell(
+                item,
+                150,
+                onEdit: (item) => _showEditDialog(item),
+                onDelete: (id) => _deleteItem(id),
+              ),
+            ),
           ],
         ),
       ),
@@ -903,15 +1095,22 @@ class _InventoryPageState extends State<InventoryPage> {
       height: 56,
       margin: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
-        color: _surfaceColor,
+        color: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            _DataCell('${item['qualityName']}: ${item['itemName']}', 200),
+            _DataCell('${item['qualityName']}: ${item['itemName']}', 400), // Increased width to 400
+            SizedBox(width: 20), // Gap after Item Name
             _DataCell(item['purchasePrice'].toInt().toString(), 100),
             _DataCell(item['salePrice'].toInt().toString(), 100),
             _DataCell(item['openingStock'].toString(), 100),
@@ -935,27 +1134,35 @@ class _InventoryPageState extends State<InventoryPage> {
     return Container(
       height: 56,
       decoration: BoxDecoration(
-        color: _surfaceColor,
+        color: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: widget.isDarkMode ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
           hintText: 'Search inventory...',
+          hintStyle: TextStyle(color: widget.isDarkMode ? _darkSecondaryTextColor : _secondaryTextColor),
           filled: true,
-          fillColor: _surfaceColor,
+          fillColor: widget.isDarkMode ? _darkSurfaceColor : _surfaceColor,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.clear, color: _secondaryTextColor),
+            icon: Icon(Icons.clear, color: widget.isDarkMode ? _darkSecondaryTextColor : _secondaryTextColor),
             onPressed: () => setState(() => _searchController.clear()),
           ),
-          prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+          prefixIcon: Icon(Icons.search, color: widget.isDarkMode ? _darkSecondaryTextColor : _secondaryTextColor),
         ),
+        style: TextStyle(color: widget.isDarkMode ? _darkTextColor : _textColor),
         onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
       ),
     );
@@ -972,7 +1179,12 @@ class _InventoryPageState extends State<InventoryPage> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => AddItems())),
+        onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (context) => AddItems(
+                  isDarkMode: widget.isDarkMode,
+                ))),
       ),
     );
   }
@@ -1011,13 +1223,20 @@ class _DataCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = (context.findAncestorWidgetOfExactType<InventoryPage>() as InventoryPage?)?.isDarkMode ?? false;
+    // Check if this is the Item Name column by width or context
+    bool isItemName = width == 400 || (width == null && context.findAncestorWidgetOfExactType<Expanded>()?.flex == 2);
     return SizedBox(
       width: width,
       child: Center(
         child: Text(
           text,
-          style: const TextStyle(color: _textColor, fontSize: 14),
-          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: isDarkMode ? _darkTextColor : _textColor,
+            fontSize: 14,
+          ),
+          overflow: isItemName ? TextOverflow.visible : TextOverflow.ellipsis,
+          softWrap: isItemName ? false : true,
           maxLines: 1,
         ),
       ),

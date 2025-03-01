@@ -4,6 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class Dashboard extends StatefulWidget {
+  final bool isDarkMode;
+  final VoidCallback toggleDarkMode;
+
+  const Dashboard({required this.isDarkMode, required this.toggleDarkMode, super.key});
+
   @override
   _DashboardState createState() => _DashboardState();
 }
@@ -22,7 +27,6 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
   int _profitMonth = 0;
   int _profitYear = 0;
   List<_HourlyTransaction> _busyHoursData = [];
-  bool _isLoading = true;
 
   late AnimationController _controller;
   late Animation<int> _inventoryAnimation;
@@ -63,11 +67,9 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         _controller
           ..reset()
           ..forward();
-        _isLoading = false;
       });
     } catch (e) {
       print('Error fetching data: $e');
-      setState(() => _isLoading = false);
     }
   }
 
@@ -130,10 +132,12 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       }
     }
 
-    _busyHoursData = hourlyCounts.entries
-        .map((e) => _HourlyTransaction(e.key, e.value))
-        .toList()
-      ..sort((a, b) => a.hour.compareTo(b.hour));
+    setState(() {
+      _busyHoursData = hourlyCounts.entries
+          .map((e) => _HourlyTransaction(e.key, e.value))
+          .toList()
+        ..sort((a, b) => a.hour.compareTo(b.hour));
+    });
   }
 
   void _updateAnimations() {
@@ -156,47 +160,81 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 24),
-        child: Column(
-          children: [
-            _buildDashboardHeader(context),
-            const SizedBox(height: 32),
-            _buildMainMetricsGrid(context),
-            const SizedBox(height: 32),
-            _buildTransactionSummary(context),
-            const SizedBox(height: 32),
-            _buildBusyHoursGraph(context),
-            const SizedBox(height: 32),
-            _buildCategoryGrid(context),
-            const SizedBox(height: 32),
-            _buildProfitMetrics(context),
-          ],
+    return Theme(
+      data: widget.isDarkMode ? _darkTheme() : _lightTheme(),
+      child: Scaffold(
+        backgroundColor: widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA),
+        body: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: 24),
+          child: Column(
+            children: [
+              _buildDashboardHeader(context),
+              const SizedBox(height: 32),
+              _buildMainMetricsGrid(context),
+              const SizedBox(height: 32),
+              _buildTransactionSummary(context),
+              const SizedBox(height: 32),
+              _buildBusyHoursGraph(context),
+              const SizedBox(height: 32),
+              _buildCategoryGrid(context),
+              const SizedBox(height: 32),
+              _buildProfitMetrics(context),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  ThemeData _lightTheme() {
+    return ThemeData(
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFF8F9FA),
+      cardColor: Colors.white,
+      textTheme: const TextTheme(
+        headlineMedium: TextStyle(color: Color(0xFF1A1A2F), fontWeight: FontWeight.w800),
+        bodyMedium: TextStyle(color: Color(0xFF6C757D)),
+        titleLarge: TextStyle(color: Color(0xFF1A1A2F), fontWeight: FontWeight.bold),
+      ),
+      shadowColor: Colors.grey.withOpacity(0.15), // Softer, more elegant shadow
+    );
+  }
+
+  ThemeData _darkTheme() {
+    return ThemeData(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xFF1A1A2F),
+      cardColor: const Color(0xFF252541),
+      textTheme: const TextTheme(
+        headlineMedium: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        bodyMedium: TextStyle(color: Color(0xFFB0B0C0)),
+        titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      ),
+      shadowColor: Colors.black.withOpacity(0.3), // Softer, more elegant shadow
+    );
+  }
+
   Widget _buildDashboardHeader(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          "Dashboard",
-          style: TextStyle(
-            fontSize: screenWidth < 600 ? 24 : 28,
-            fontWeight: FontWeight.w800,
-            color: const Color(0xFF1A1A2F),
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Dashboard",
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: screenWidth < 600 ? 24 : 28),
+            ),
+            Text(
+              "Real-time business analytics",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: screenWidth < 600 ? 14 : 16),
+            ),
+          ],
         ),
-        Text(
-          "Real-time business analytics",
-          style: TextStyle(fontSize: screenWidth < 600 ? 14 : 16, color: const Color(0xFF6C757D)),
+        IconButton(
+          icon: Icon(Icons.refresh, color: Theme.of(context).textTheme.bodyMedium?.color),
+          onPressed: _fetchData,
         ),
       ],
     );
@@ -208,7 +246,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: MediaQuery.of(context).size.width > 600 ? 2 : 1,
-        childAspectRatio: 3,
+        childAspectRatio: 2.5,
         crossAxisSpacing: 24,
         mainAxisSpacing: 24,
       ),
@@ -261,9 +299,13 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       builder: (context, child) => Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(colors: gradient),
+          gradient: LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
           boxShadow: [
-            BoxShadow(color: gradient.last.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 8)),
+            BoxShadow(
+              color: Theme.of(context).shadowColor,
+              blurRadius: 8, // Increased for softer, elegant shadow
+              offset: const Offset(0, 2), // Slightly raised for beauty
+            ),
           ],
         ),
         padding: EdgeInsets.all(screenWidth < 600 ? 16 : 24),
@@ -271,7 +313,10 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
           children: [
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, size: screenWidth < 600 ? 24 : 32, color: Colors.white),
             ),
             SizedBox(width: screenWidth < 600 ? 12 : 20),
@@ -304,23 +349,19 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       children: [
         Text(
           "Transaction Summary",
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF1A1A2F),
-          ),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
         ),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.2),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: Theme.of(context).shadowColor,
+                blurRadius: 8, // Increased for softer, elegant shadow
+                offset: const Offset(0, 2), // Slightly raised for beauty
               ),
             ],
           ),
@@ -328,7 +369,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
             children: [
               _buildSummaryHeader(),
               const SizedBox(height: 8),
-              Divider(color: Colors.grey.withOpacity(0.2)),
+              Divider(color: Theme.of(context).shadowColor.withOpacity(0.2)),
               const SizedBox(height: 8),
               _buildSummaryRow("Today", _transactionsToday),
               _buildSummaryRow("This Week", _transactionsWeek),
@@ -360,15 +401,11 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: const Color(0xFF6C757D)),
+            Icon(icon, size: 16, color: Theme.of(context).textTheme.bodyMedium?.color),
             const SizedBox(width: 4),
             Text(
               title,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: const Color(0xFF1A1A2F),
-              ),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 14),
               textAlign: TextAlign.center,
             ),
           ],
@@ -399,16 +436,12 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         margin: const EdgeInsets.symmetric(horizontal: 4.0),
         padding: const EdgeInsets.all(12.0),
         decoration: BoxDecoration(
-          color: backgroundColor,
+          color: widget.isDarkMode ? backgroundColor.withOpacity(0.2) : backgroundColor,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF1A1A2F),
-          ),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500, fontSize: 14),
           textAlign: TextAlign.center,
         ),
       ),
@@ -421,17 +454,21 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       children: [
         Text(
           "Busy Hours (Today)",
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF1A1A2F)),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
         ),
         const SizedBox(height: 16),
         Container(
           height: 250,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
-              BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 12, offset: const Offset(0, 4)),
+              BoxShadow(
+                color: Theme.of(context).shadowColor,
+                blurRadius: 8, // Increased for softer, elegant shadow
+                offset: const Offset(0, 2), // Slightly raised for beauty
+              ),
             ],
           ),
           child: BarChart(
@@ -444,8 +481,10 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                   barRods: [
                     BarChartRodData(
                       toY: data.count.toDouble(),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF4E54C8), Color(0xFF8F94FB)],
+                      gradient: LinearGradient(
+                        colors: widget.isDarkMode
+                            ? [Colors.blueAccent, Colors.blueGrey]
+                            : [const Color(0xFF4E54C8), const Color(0xFF8F94FB)],
                         begin: Alignment.bottomCenter,
                         end: Alignment.topCenter,
                       ),
@@ -454,7 +493,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                       backDrawRodData: BackgroundBarChartRodData(
                         show: true,
                         toY: (_busyHoursData.isNotEmpty ? _busyHoursData.map((e) => e.count).reduce((a, b) => a > b ? a : b) * 1.2 : 10).toDouble(),
-                        color: Colors.grey.withOpacity(0.1),
+                        color: widget.isDarkMode ? Colors.grey.withOpacity(0.2) : Colors.grey.withOpacity(0.1),
                       ),
                     ),
                   ],
@@ -467,7 +506,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                     showTitles: true,
                     getTitlesWidget: (value, meta) => Text(
                       "${value.toInt()}:00",
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF6C757D)),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
                     ),
                   ),
                 ),
@@ -477,7 +516,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                     reservedSize: 40,
                     getTitlesWidget: (value, meta) => Text(
                       value.toInt().toString(),
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF6C757D)),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
                     ),
                   ),
                 ),
@@ -489,7 +528,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                 show: true,
                 drawVerticalLine: false,
                 getDrawingHorizontalLine: (value) => FlLine(
-                  color: Colors.grey.withOpacity(0.2),
+                  color: Theme.of(context).shadowColor.withOpacity(0.2),
                   strokeWidth: 1,
                 ),
               ),
@@ -499,7 +538,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                   getTooltipColor: (group) => Colors.black.withOpacity(0.8),
                   tooltipPadding: const EdgeInsets.all(8),
                   tooltipMargin: 8,
-                  tooltipBorder: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
+                  tooltipBorder: BorderSide(color: Theme.of(context).shadowColor.withOpacity(0.2), width: 1),
                   getTooltipItem: (group, groupIndex, rod, rodIndex) {
                     return BarTooltipItem(
                       '${group.x}:00\n${rod.toY.toInt()} transactions',
@@ -521,7 +560,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       children: [
         Text(
           "Categories",
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: const Color(0xFF1A1A2F)),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
         ),
         const SizedBox(height: 16),
         LayoutBuilder(
@@ -578,10 +617,14 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       animation: animation,
       builder: (context, child) => Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
-            BoxShadow(color: Color(0x11000000), blurRadius: 16, offset: Offset(0, 8)),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).shadowColor,
+              blurRadius: 8, // Increased for softer, elegant shadow
+              offset: const Offset(0, 2), // Slightly raised for beauty
+            ),
           ],
         ),
         padding: EdgeInsets.all(screenWidth < 600 ? 16 : 20),
@@ -599,20 +642,12 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
             const Spacer(),
             Text(
               title,
-              style: TextStyle(
-                color: const Color(0xFF6C757D),
-                fontSize: screenWidth < 600 ? 14 : 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: screenWidth < 600 ? 14 : 16),
             ),
             const SizedBox(height: 8),
             Text(
               animation.value.toString(),
-              style: TextStyle(
-                color: const Color(0xFF1A1A2F),
-                fontSize: screenWidth < 600 ? 24 : 28,
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: screenWidth < 600 ? 24 : 28),
             ),
           ],
         ),
@@ -626,30 +661,25 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       children: [
         Text(
           "Sales Overview",
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF1A1A2F),
-          ),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
         ),
         const SizedBox(height: 16),
         Container(
           height: 300,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.2),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: Theme.of(context).shadowColor,
+                blurRadius: 8, // Increased for softer, elegant shadow
+                offset: const Offset(0, 2), // Slightly raised for beauty
               ),
             ],
           ),
           child: Row(
             children: [
-              // Pie Chart
               Expanded(
                 flex: 2,
                 child: PieChart(
@@ -661,7 +691,6 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
                   ),
                 ),
               ),
-              // Legend
               Expanded(
                 flex: 1,
                 child: Column(
@@ -683,21 +712,16 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
     );
   }
 
-// Helper method to create pie chart sections
   List<PieChartSectionData> _getPieChartSections() {
     final total = _profitToday + _profitMonth + _profitYear;
     if (total == 0) {
       return [
         PieChartSectionData(
-          color: Colors.grey.withOpacity(0.3),
+          color: widget.isDarkMode ? Colors.grey.withOpacity(0.5) : Colors.grey.withOpacity(0.3),
           value: 1,
           title: "No Data",
           radius: 50,
-          titleStyle: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
         ),
       ];
     }
@@ -708,11 +732,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         value: _profitToday.toDouble(),
         title: "${((_profitToday / total) * 100).toStringAsFixed(1)}%",
         radius: 50,
-        titleStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
+        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
         badgeWidget: _buildBadge(Icons.today, Colors.green),
         badgePositionPercentageOffset: 1.2,
       ),
@@ -721,11 +741,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         value: _profitMonth.toDouble(),
         title: "${((_profitMonth / total) * 100).toStringAsFixed(1)}%",
         radius: 50,
-        titleStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
+        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
         badgeWidget: _buildBadge(Icons.calendar_month, Colors.blue),
         badgePositionPercentageOffset: 1.2,
       ),
@@ -734,18 +750,13 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         value: _profitYear.toDouble(),
         title: "${((_profitYear / total) * 100).toStringAsFixed(1)}%",
         radius: 50,
-        titleStyle: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
+        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
         badgeWidget: _buildBadge(Icons.calendar_today, Colors.purple),
         badgePositionPercentageOffset: 1.2,
       ),
     ];
   }
 
-// Helper method to build legend items
   Widget _buildLegendItem(String title, Color color, int value) {
     return Row(
       children: [
@@ -761,36 +772,28 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF6C757D),
-            ),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
           ),
         ),
         Text(
           NumberFormat.compact().format(value),
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold, color: color, fontSize: 14),
         ),
       ],
     );
   }
 
-// Helper method to build badge widgets
   Widget _buildBadge(IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: widget.isDarkMode ? const Color(0xFF252541) : Colors.white,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.3),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Theme.of(context).shadowColor,
+            blurRadius: 6, // Slightly increased for a softer badge shadow
+            offset: const Offset(0, 1), // Minimal lift for elegance
           ),
         ],
       ),
@@ -801,7 +804,6 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
       ),
     );
   }
-
 }
 
 class _HourlyTransaction {
