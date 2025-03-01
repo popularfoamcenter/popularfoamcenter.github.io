@@ -46,7 +46,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     final themeProvider = Provider.of<ThemeModeProvider>(context, listen: false);
-    _darkModeState = themeProvider.themeMode == ThemeMode.dark ? 2 : 0; // Set initial state based on provider
+    _darkModeState = themeProvider.themeMode == ThemeMode.dark ? 2 : 0;
     _navigationItems = [
       {'icon': Icons.dashboard, 'label': 'Dashboard', 'page': Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.inventory_2, 'label': 'Inventory', 'page': InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
@@ -57,7 +57,7 @@ class _HomePageState extends State<HomePage> {
       {'icon': Icons.grade, 'label': 'Quality', 'page': const QualityPage()},
       {'icon': Icons.business, 'label': 'Company', 'page': CompanyListPage()},
       {'icon': Icons.account_balance_sharp, 'label': 'Accounts', 'page': const AccountsPage()},
-      {'icon': Icons.edit_note_rounded, 'label': 'Ledger', 'page': const CompanyLedgerPage()},
+      {'icon': Icons.edit_note_rounded, 'label': 'Ledger', 'page': CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.attach_money, 'label': 'Cash Register', 'page': const CashRegisterPage()},
       {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2)},
       {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': const InvoiceListScreen()},
@@ -80,7 +80,7 @@ class _HomePageState extends State<HomePage> {
 
   void _toggleDarkMode() {
     setState(() {
-      _darkModeState = (_darkModeState + 1) % 3; // Cycle through 0, 1, 2
+      _darkModeState = (_darkModeState + 1) % 3;
       final themeProvider = Provider.of<ThemeModeProvider>(context, listen: false);
       themeProvider.setThemeMode(_darkModeState == 2 ? ThemeMode.dark : ThemeMode.light);
       _navigationItems = _navigationItems.map((item) {
@@ -102,6 +102,12 @@ class _HomePageState extends State<HomePage> {
             'label': item['label'],
             'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2),
           };
+        } else if (item['label'] == 'Ledger') {
+          return {
+            'icon': item['icon'],
+            'label': item['label'],
+            'page': CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
+          };
         }
         return item;
       }).toList();
@@ -111,6 +117,8 @@ class _HomePageState extends State<HomePage> {
         _currentPage = InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Purchase Order") {
         _currentPage = PurchaseOrdersPage(isDarkMode: _darkModeState == 2);
+      } else if (_selectedButton == "Ledger") {
+        _currentPage = CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       }
     });
   }
@@ -203,7 +211,7 @@ class _HomePageState extends State<HomePage> {
 
     if (confirmed == true) {
       final themeProvider = Provider.of<ThemeModeProvider>(context, listen: false);
-      themeProvider.setThemeMode(_darkModeState == 2 ? ThemeMode.dark : ThemeMode.light); // Sync theme before logout
+      themeProvider.setThemeMode(_darkModeState == 2 ? ThemeMode.dark : ThemeMode.light);
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage()));
     }
   }

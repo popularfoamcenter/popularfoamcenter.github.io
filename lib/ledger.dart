@@ -3,13 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
 
-// Color Scheme (matched with InvoiceListScreen)
-const Color _primaryColor = Color(0xFF0D6EFD);
-const Color _textColor = Color(0xFF2D2D2D);
-const Color _secondaryTextColor = Color(0xFF4A4A4A);
-const Color _backgroundColor = Color(0xFFF8F9FA);
-const Color _surfaceColor = Colors.white;
-
 class ProcessedTransaction {
   final DocumentSnapshot doc;
   final String type;
@@ -41,7 +34,14 @@ class ProcessedData {
 }
 
 class CompanyLedgerPage extends StatefulWidget {
-  const CompanyLedgerPage({Key? key}) : super(key: key);
+  final bool isDarkMode;
+  final VoidCallback toggleDarkMode;
+
+  const CompanyLedgerPage({
+    Key? key,
+    required this.isDarkMode,
+    required this.toggleDarkMode,
+  }) : super(key: key);
 
   @override
   State<CompanyLedgerPage> createState() => _CompanyLedgerPageState();
@@ -63,7 +63,13 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   double _balanceAmount = 0.0;
   DateTime? _fromDate;
   DateTime? _toDate;
-  bool _showSummary = false;
+
+  // Adjusted Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _secondaryTextColor => widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
+  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   Stream<List<DocumentSnapshot>> get _combinedTransactions {
     if (_selectedCompanyId == null || _selectedCompanyName == null) {
@@ -100,14 +106,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     List<ProcessedTransaction> processed = [];
 
     print('Processing ${transactions.length} transactions...');
-    // Sort transactions by date, oldest first (ascending order)
     transactions.sort((a, b) {
       DateTime? aDate = _getDate(a);
       DateTime? bDate = _getDate(b);
-      // If either date is null, push it to the end; otherwise, compare normally
       if (aDate == null) return 1;
       if (bDate == null) return -1;
-      return aDate.compareTo(bDate); // Oldest first
+      return aDate.compareTo(bDate);
     });
 
     for (var doc in transactions) {
@@ -178,7 +182,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       if (doc.reference.parent.id == 'purchaseinvoices') {
         final invoiceDate = doc['invoiceDate'];
         print('Parsing invoiceDate for ${doc.id}: $invoiceDate');
-        return DateFormat('dd-MM-yyyy').parse(invoiceDate); // Matches InvoiceScreen format
+        return DateFormat('dd-MM-yyyy').parse(invoiceDate);
       }
       final createdAt = doc['created_at'] as Timestamp?;
       return createdAt?.toDate();
@@ -194,6 +198,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       initialDate: DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: widget.isDarkMode ? ThemeData.dark() : ThemeData.light(),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -203,13 +213,53 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     }
   }
 
+  void _showSummaryBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: StreamBuilder<List<DocumentSnapshot>>(
+            stream: _combinedTransactions,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return FutureBuilder<ProcessedData>(
+                future: _processTransactions(snapshot.data!),
+                builder: (context, asyncSnapshot) {
+                  if (!asyncSnapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final data = asyncSnapshot.data!;
+                  return SingleChildScrollView(
+                    child: _buildFooter(
+                      data.totalCredit,
+                      data.totalDebit,
+                      data.finalBalance,
+                      data.accountTotals,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            const Text('Company Ledger', style: TextStyle(color: _textColor)),
+            Text('Company Ledger', style: TextStyle(color: _textColor)), // Removed const
             const SizedBox(width: 16),
             Expanded(child: _buildCompanyDropdown()),
             const SizedBox(width: 16),
@@ -220,15 +270,21 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         ),
         backgroundColor: _backgroundColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: _textColor),
+        iconTheme: IconThemeData(color: _textColor),
         actions: [
           IconButton(
-            icon: Icon(_showSummary ? Icons.visibility_off : Icons.visibility, color: _textColor),
-            onPressed: () => setState(() => _showSummary = !_showSummary),
+            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+            color: _textColor,
+            onPressed: widget.toggleDarkMode,
           ),
         ],
       ),
       backgroundColor: _backgroundColor,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showSummaryBottomSheet(context),
+        backgroundColor: _primaryColor,
+        child: const Icon(Icons.info_outline, color: Colors.white),
+      ),
       body: Column(
         children: [
           if (_selectedCompanyId != null) ...[
@@ -246,13 +302,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
                     return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('No transactions found', style: TextStyle(color: _textColor)),
-                          if (_showSummary) _buildFooter(0, 0, _balanceAmount, {}),
-                        ],
-                      ),
+                      child: Text('No transactions found', style: TextStyle(color: _textColor)),
                     );
                   }
 
@@ -284,9 +334,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                                   _buildTransactionRow(data.transactions[index]),
                             ),
                           ),
-                          if (_showSummary)
-                            _buildFooter(
-                                data.totalCredit, data.totalDebit, data.finalBalance, data.accountTotals),
                         ],
                       );
                     },
@@ -439,8 +486,8 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         padding: EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Expanded(child: _HeaderCell('Details')),
             Expanded(child: _HeaderCell('Date')),
+            Expanded(child: _HeaderCell('Details')),
             Expanded(child: _HeaderCell('Credit')),
             Expanded(child: _HeaderCell('Debit')),
             Expanded(child: _HeaderCell('Balance')),
@@ -467,6 +514,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
+            Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(pt.date))),
             Expanded(
               child: isPurchase
                   ? _DataCell('Invoice ${pt.doc['invoiceId'] ?? 'N/A'}')
@@ -477,7 +525,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                 },
               ),
             ),
-            Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(pt.date))),
             Expanded(
               child: _DataCell(
                 pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
@@ -504,67 +551,64 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
   Widget _buildFooter(double totalCredit, double totalDebit, double finalBalance,
       Map<String, AccountTotal> accountTotals) {
-    return Visibility(
-      visible: _showSummary,
-      child: Container(
-        margin: const EdgeInsets.all(24),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: _surfaceColor,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+    return Container(
+      margin: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Column(
+        children: [
+          if (accountTotals.isNotEmpty) ...[
+            ...accountTotals.entries.map((entry) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      entry.key,
+                      style: TextStyle(
+                          color: _textColor, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${entry.value.credit.toStringAsFixed(0)}/-',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.green, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${entry.value.debit.toStringAsFixed(0)}/-',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.red, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+            const Divider(),
           ],
-        ),
-        child: Column(
-          children: [
-            if (accountTotals.isNotEmpty) ...[
-              ...accountTotals.entries.map((entry) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        entry.key,
-                        style: TextStyle(
-                            color: _textColor, fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${entry.value.credit.toStringAsFixed(0)}/-',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: Colors.green, fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${entry.value.debit.toStringAsFixed(0)}/-',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: Colors.red, fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                  ],
-                ),
-              )),
-              const Divider(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildFooterColumn('Total Credit', totalCredit, Colors.green),
+              _buildFooterColumn('Total Debit', totalDebit, Colors.red),
+              _buildFooterColumn('Final Balance', finalBalance,
+                  finalBalance >= 0 ? Colors.green : Colors.red),
             ],
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildFooterColumn('Total Credit', totalCredit, Colors.green),
-                _buildFooterColumn('Total Debit', totalDebit, Colors.red),
-                _buildFooterColumn('Final Balance', finalBalance,
-                    finalBalance >= 0 ? Colors.green : Colors.red),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -590,7 +634,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       return DateFormat('dd-MM-yyyy').format(date);
     } catch (e) {
       print('Error formatting date: $e');
-      return dateString; // Return original string if parsing fails
+      return dateString;
     }
   }
 }
@@ -620,21 +664,20 @@ class _DataCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Access isDarkMode directly from the widget's state
+    final isDarkMode = (context.findAncestorWidgetOfExactType<CompanyLedgerPage>())!.isDarkMode;
     return Center(
       child: text is Widget
           ? text
           : Text(
         text.toString(),
-        style: TextStyle(color: color ?? _textColor, fontSize: 14),
+        style: TextStyle(
+          color: color ?? (isDarkMode ? Colors.white : const Color(0xFF2D2D2D)),
+          fontSize: 14,
+        ),
         overflow: TextOverflow.ellipsis,
         maxLines: 1,
       ),
     );
   }
-}
-
-void main() {
-  runApp(const MaterialApp(
-    home: CompanyLedgerPage(),
-  ));
 }

@@ -872,6 +872,10 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
   bool _isLoading = false;
   late AnimationController _controller;
   late Animation<double> _animation;
+  final TextEditingController _searchController = TextEditingController();
+
+  // FocusNode for keyboard listener
+  final FocusNode _focusNode = FocusNode();
 
   // Color Scheme
   Color get _primaryColor => const Color(0xFF0D6EFD);
@@ -891,11 +895,21 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
       _taxController.text = '0.5';
     }
     _controller.forward();
+
+    // Request focus for the keyboard listener when the widget initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _searchController.dispose();
+    _orderDateController.dispose();
+    _taxController.dispose();
+    _itemsScrollController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -996,6 +1010,8 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
           stockQuantity: stockQuantity,
         ));
         _calculateTotal();
+        _searchController.clear();
+        _searchQuery = '';
       });
       Navigator.pop(context);
     } catch (e) {
@@ -1054,66 +1070,78 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _surfaceColor,
-        title: Text(widget.orderId != null ? "Edit Purchase Order" : "Add Purchase Order", style: TextStyle(color: _textColor)),
-        elevation: 0,
-        iconTheme: IconThemeData(color: _textColor),
-      ),
-      backgroundColor: _backgroundColor,
-      body: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    children: [
-                      _buildItemsHeader(),
-                      const SizedBox(height: 16),
-                      Container(
-                        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-                        child: ListView.separated(
-                          controller: _itemsScrollController,
-                          itemCount: _items.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (context, index) => _buildItemRow(_items[index], index),
-                        ),
-                      ),
-                      if (_items.isEmpty)
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyA &&
+            HardwareKeyboard.instance.isControlPressed) {
+          _showAddItemDialog();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: _surfaceColor,
+          title: Text(widget.orderId != null ? "Edit Purchase Order" : "Add Purchase Order", style: TextStyle(color: _textColor)),
+          elevation: 0,
+          iconTheme: IconThemeData(color: _textColor),
+        ),
+        backgroundColor: _backgroundColor,
+        body: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      children: [
+                        _buildItemsHeader(),
+                        const SizedBox(height: 16),
                         Container(
-                          height: 200,
-                          alignment: Alignment.center,
-                          child: Text("No items added", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
+                          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                          child: ListView.separated(
+                            controller: _itemsScrollController,
+                            itemCount: _items.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, index) => _buildItemRow(_items[index], index),
+                          ),
                         ),
-                    ],
+                        if (_items.isEmpty)
+                          Container(
+                            height: 200,
+                            alignment: Alignment.center,
+                            child: Text("No items added", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 24),
-                Expanded(
-                  flex: 1,
-                  child: SingleChildScrollView(
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          _buildSummaryCard(),
-                          const SizedBox(height: 24),
-                          _buildInputPanel(),
-                        ],
+                  const SizedBox(width: 24),
+                  Expanded(
+                    flex: 1,
+                    child: SingleChildScrollView(
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            _buildInputPanel(),
+                            const SizedBox(height: 24),
+                            _buildSummaryCard(),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          if (_isLoading) Center(child: CircularProgressIndicator(color: _primaryColor)),
-        ],
+            if (_isLoading) Center(child: CircularProgressIndicator(color: _primaryColor)),
+          ],
+        ),
       ),
     );
   }
@@ -1425,6 +1453,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
+                  controller: _searchController,
                   autofocus: true,
                   decoration: InputDecoration(
                     hintText: 'Search items...',
@@ -1685,6 +1714,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
     );
   }
 }
+
 
 class _HeaderCell extends StatelessWidget {
   final String text;
