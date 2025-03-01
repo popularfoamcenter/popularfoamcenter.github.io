@@ -3,13 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 
-// Color Scheme Matching Purchase Invoice
-const Color _primaryColor = Color(0xFF0D6EFD);
-const Color _textColor = Color(0xFF2D2D2D);
-const Color _secondaryTextColor = Color(0xFF4A4A4A);
-const Color _backgroundColor = Color(0xFFF8F9FA);
-const Color _surfaceColor = Colors.white;
-
 // Modern Coverage Progress Indicator with Animation
 class CoverageProgressPainter extends CustomPainter {
   final double progress;
@@ -23,7 +16,7 @@ class CoverageProgressPainter extends CustomPainter {
     final radius = size.width / 2;
     const strokeWidth = 12.0;
 
-    // Background Circle (Subtle Gradient)
+    // Background Circle
     final backgroundPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
@@ -34,13 +27,13 @@ class CoverageProgressPainter extends CustomPainter {
       ).createShader(Rect.fromCircle(center: center, radius: radius));
     canvas.drawCircle(center, radius, backgroundPaint);
 
-    // Animated Progress Arc (Modern Gradient)
+    // Animated Progress Arc
     final progressPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..shader = const LinearGradient(
-        colors: [_primaryColor, Color(0xFF4A90E2)],
+        colors: [Color(0xFF0D6EFD), Color(0xFF4A90E2)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(Rect.fromCircle(center: center, radius: radius));
@@ -55,11 +48,11 @@ class CoverageProgressPainter extends CustomPainter {
       progressPaint,
     );
 
-    // Inner Glow Effect (Modern Touch)
+    // Inner Glow Effect
     final glowPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth + 2
-      ..color = _primaryColor.withOpacity(0.2)
+      ..color = const Color(0xFF0D6EFD).withOpacity(0.2)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
@@ -76,7 +69,9 @@ class CoverageProgressPainter extends CustomPainter {
 
 // Purchase Orders List Screen
 class PurchaseOrdersPage extends StatefulWidget {
-  const PurchaseOrdersPage({super.key});
+  final bool isDarkMode;
+
+  const PurchaseOrdersPage({super.key, required this.isDarkMode});
 
   @override
   _PurchaseOrdersPageState createState() => _PurchaseOrdersPageState();
@@ -87,6 +82,13 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   String _searchQuery = '';
   final ScrollController _horizontalScrollController = ScrollController();
   final double _mobileTableWidth = 1200;
+
+  // Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _secondaryTextColor => widget.isDarkMode ? const Color(0xFFB0B0C0) : const Color(0xFF4A4A4A);
+  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   @override
   void dispose() {
@@ -118,6 +120,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
           orderId: orderDoc.id,
           existingOrder: order,
           vehicleSize: order['vehicle_size'] ?? 0,
+          isDarkMode: widget.isDarkMode,
         ),
       ),
     );
@@ -134,6 +137,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
           vehicleSize: order['vehicle_size'] is int ? order['vehicle_size'] : 0,
           orderId: orderDoc.id,
           existingOrder: order,
+          isDarkMode: widget.isDarkMode,
         ),
       ),
     );
@@ -151,15 +155,15 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
           decoration: BoxDecoration(
             color: _surfaceColor,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 24, offset: const Offset(0, 8))],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Confirm Delete', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+              Text('Confirm Delete', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
               const SizedBox(height: 20),
-              const Text('Are you sure you want to delete this order?', style: TextStyle(fontSize: 14, color: _secondaryTextColor)),
+              Text('Are you sure you want to delete this order?', style: TextStyle(fontSize: 14, color: _secondaryTextColor)),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -170,7 +174,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
+                    child: Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
                   ),
                   const SizedBox(width: 16),
                   ElevatedButton(
@@ -180,7 +184,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text('Delete', style: TextStyle(color: _surfaceColor, fontSize: 14)),
+                    child: const Text('Delete', style: TextStyle(color: Colors.white, fontSize: 14)),
                   ),
                 ],
               ),
@@ -206,10 +210,10 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Purchase Orders', style: TextStyle(color: _textColor)),
-        backgroundColor: _backgroundColor,
+        title: Text('Purchase Orders', style: TextStyle(color: _textColor)),
+        backgroundColor: _surfaceColor,
         elevation: 0,
-        iconTheme: const IconThemeData(color: _textColor),
+        iconTheme: IconThemeData(color: _textColor),
       ),
       backgroundColor: _backgroundColor,
       body: Column(
@@ -235,11 +239,11 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: _primaryColor));
-        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
+        if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator(color: _primaryColor));
+        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
 
         final orders = snapshot.data?.docs.where((doc) => (doc['company_name'] as String? ?? '').toLowerCase().contains(_searchQuery)).toList() ?? [];
-        if (orders.isEmpty) return const Center(child: Text('No orders found', style: TextStyle(color: _textColor)));
+        if (orders.isEmpty) return Center(child: Text('No orders found', style: TextStyle(color: _textColor)));
 
         return Column(
           children: [
@@ -275,11 +279,11 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
                 child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: _primaryColor));
-                    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
+                    if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator(color: _primaryColor));
+                    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
 
                     final orders = snapshot.data?.docs.where((doc) => (doc['company_name'] as String? ?? '').toLowerCase().contains(_searchQuery)).toList() ?? [];
-                    if (orders.isEmpty) return const Center(child: Text('No orders found', style: TextStyle(color: _textColor)));
+                    if (orders.isEmpty) return Center(child: Text('No orders found', style: TextStyle(color: _textColor)));
 
                     return ListView.separated(
                       physics: const BouncingScrollPhysics(),
@@ -304,7 +308,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
     decoration: BoxDecoration(
       color: _primaryColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 12, offset: const Offset(0, 4))],
     ),
     child: const Padding(
       padding: EdgeInsets.symmetric(horizontal: 12),
@@ -326,7 +330,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
     decoration: BoxDecoration(
       color: _primaryColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 12, offset: const Offset(0, 4))],
     ),
     child: const Padding(
       padding: EdgeInsets.symmetric(horizontal: 12),
@@ -352,7 +356,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       decoration: BoxDecoration(
         color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -362,7 +366,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
             Expanded(child: _DataCell(order['vehicle_name'] ?? 'N/A')),
             Expanded(child: _DataCell(total)),
             Expanded(child: _DataCell(orderDate)),
-            Expanded(child: _ActionCell(orderDoc, null, onView: _viewOrder, onEdit: _editOrder, onDelete: _deleteOrder)),
+            Expanded(child: _ActionCell(orderDoc, null, onView: _viewOrder, onEdit: _editOrder, onDelete: _deleteOrder, isDarkMode: widget.isDarkMode)),
           ],
         ),
       ),
@@ -379,7 +383,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       decoration: BoxDecoration(
         color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -389,7 +393,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
             _DataCell(order['vehicle_name'] ?? 'N/A', 200),
             _DataCell(total, 150),
             _DataCell(orderDate, 150),
-            _ActionCell(orderDoc, 150, onView: _viewOrder, onEdit: _editOrder, onDelete: _deleteOrder),
+            _ActionCell(orderDoc, 150, onView: _viewOrder, onEdit: _editOrder, onDelete: _deleteOrder, isDarkMode: widget.isDarkMode),
           ],
         ),
       ),
@@ -401,25 +405,27 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
     decoration: BoxDecoration(
       color: _surfaceColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 8, offset: const Offset(0, 4))],
     ),
     child: TextField(
       controller: _searchController,
       decoration: InputDecoration(
         hintText: 'Search orders...',
+        hintStyle: TextStyle(color: _secondaryTextColor),
         filled: true,
         fillColor: _surfaceColor,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
         contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         suffixIcon: IconButton(
-          icon: const Icon(Icons.clear, color: _secondaryTextColor),
+          icon: Icon(Icons.clear, color: _secondaryTextColor),
           onPressed: () {
             _searchController.clear();
             setState(() => _searchQuery = '');
           },
         ),
-        prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+        prefixIcon: Icon(Icons.search, color: _secondaryTextColor),
       ),
+      style: TextStyle(color: _textColor),
       onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
     ),
   );
@@ -427,8 +433,8 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   Widget _buildAddButton() => SizedBox(
     height: 56,
     child: ElevatedButton.icon(
-      icon: const Icon(Icons.add, size: 20, color: _surfaceColor),
-      label: const Text('Add Order', style: TextStyle(fontSize: 14, color: _surfaceColor)),
+      icon: const Icon(Icons.add, size: 20, color: Colors.white),
+      label: const Text('Add Order', style: TextStyle(fontSize: 14, color: Colors.white)),
       style: ElevatedButton.styleFrom(
         backgroundColor: _primaryColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -441,7 +447,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
   Future<void> _showCompanyVehicleDialog(BuildContext context) async {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => CompanyVehicleSelectionDialog(),
+      builder: (context) => CompanyVehicleSelectionDialog(isDarkMode: widget.isDarkMode),
     );
 
     if (result != null) {
@@ -452,6 +458,7 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
             companyName: result['company'],
             vehicleName: result['vehicle'],
             vehicleSize: result['vehicleSize'],
+            isDarkMode: widget.isDarkMode,
           ),
         ),
       );
@@ -532,10 +539,22 @@ class ViewPurchaseOrderPage extends StatefulWidget {
   final Map<String, dynamic> existingOrder;
   final List<OrderItem> items;
   final int vehicleSize;
+  final bool isDarkMode;
 
-  const ViewPurchaseOrderPage({super.key, required this.orderId, required this.existingOrder, required this.vehicleSize}) : items = const [];
+  const ViewPurchaseOrderPage({
+    super.key,
+    required this.orderId,
+    required this.existingOrder,
+    required this.vehicleSize,
+    required this.isDarkMode,
+  }) : items = const [];
 
-  factory ViewPurchaseOrderPage.fromData({required String orderId, required Map<String, dynamic> existingOrder, required int vehicleSize}) {
+  factory ViewPurchaseOrderPage.fromData({
+    required String orderId,
+    required Map<String, dynamic> existingOrder,
+    required int vehicleSize,
+    required bool isDarkMode,
+  }) {
     final itemsList = existingOrder['items'] as List<dynamic>? ?? [];
     final items = itemsList.map((item) => OrderItem(
       itemId: item['itemId'] ?? '',
@@ -548,10 +567,16 @@ class ViewPurchaseOrderPage extends StatefulWidget {
       covered: item['covered']?.toString() ?? "No",
       size: item['size'] is int ? item['size'] : int.tryParse(item['size']?.toString() ?? '0') ?? 0,
     )).toList();
-    return ViewPurchaseOrderPage._(orderId: orderId, existingOrder: existingOrder, items: items, vehicleSize: vehicleSize);
+    return ViewPurchaseOrderPage._(orderId: orderId, existingOrder: existingOrder, items: items, vehicleSize: vehicleSize, isDarkMode: isDarkMode);
   }
 
-  const ViewPurchaseOrderPage._({required this.orderId, required this.existingOrder, required this.items, required this.vehicleSize});
+  const ViewPurchaseOrderPage._({
+    required this.orderId,
+    required this.existingOrder,
+    required this.items,
+    required this.vehicleSize,
+    required this.isDarkMode,
+  });
 
   @override
   _ViewPurchaseOrderPageState createState() => _ViewPurchaseOrderPageState();
@@ -560,6 +585,13 @@ class ViewPurchaseOrderPage extends StatefulWidget {
 class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
+
+  // Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _secondaryTextColor => widget.isDarkMode ? const Color(0xFFB0B0C0) : const Color(0xFF4A4A4A);
+  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   @override
   void initState() {
@@ -593,10 +625,10 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _backgroundColor,
-        title: const Text("View Purchase Order", style: TextStyle(color: _textColor)),
+        backgroundColor: _surfaceColor,
+        title: Text("View Purchase Order", style: TextStyle(color: _textColor)),
         elevation: 0,
-        iconTheme: const IconThemeData(color: _textColor),
+        iconTheme: IconThemeData(color: _textColor),
       ),
       backgroundColor: _backgroundColor,
       body: Padding(
@@ -622,7 +654,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
                     Container(
                       height: 200,
                       alignment: Alignment.center,
-                      child: const Text("No items", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
+                      child: Text("No items", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
                     ),
                 ],
               ),
@@ -652,7 +684,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
     decoration: BoxDecoration(
       color: _primaryColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 12)],
     ),
     child: const Row(
       children: [
@@ -674,37 +706,40 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
     decoration: BoxDecoration(
       color: _surfaceColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 8)],
     ),
     child: Row(
       children: [
-        Expanded(flex: 2, child: Center(child: Text(item.quality, style: const TextStyle(color: _textColor, fontSize: 14)))),
-        Expanded(flex: 2, child: Center(child: Text(item.name, style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 2, child: Center(child: Text(item.quality, style: TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 2, child: Center(child: Text(item.name, style: TextStyle(color: _textColor, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                    color: item.covered.toLowerCase() == "yes" ? Colors.green[widget.isDarkMode ? 700 : 100] : Colors.red[widget.isDarkMode ? 700 : 100],
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     item.covered,
-                    style: TextStyle(color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800], fontSize: 12, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                        color: item.covered.toLowerCase() == "yes" ? Colors.green[widget.isDarkMode ? 100 : 800] : Colors.red[widget.isDarkMode ? 100 : 800],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500),
                   ),
                 ))),
-        Expanded(flex: 1, child: Center(child: Text(item.quantity.toString(), style: const TextStyle(color: _textColor, fontSize: 14)))),
-        Expanded(flex: 1, child: Center(child: Text(item.price.toStringAsFixed(0), style: const TextStyle(color: _textColor, fontSize: 14)))),
-        Expanded(flex: 1, child: Center(child: Text(item.discount.toStringAsFixed(0), style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text(item.quantity.toString(), style: TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text(item.price.toStringAsFixed(0), style: TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text(item.discount.toStringAsFixed(0), style: TextStyle(color: _textColor, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text(
                   (item.quantity * item.price * (1 - item.discount / 100)).toStringAsFixed(0),
-                  style: const TextStyle(color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                  style: TextStyle(color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
                 ))),
-        Expanded(flex: 1, child: Center(child: Text(item.stockQuantity.toString(), style: const TextStyle(color: _textColor, fontSize: 14)))),
+        Expanded(flex: 1, child: Center(child: Text(item.stockQuantity.toString(), style: TextStyle(color: _textColor, fontSize: 14)))),
       ],
     ),
   );
@@ -714,7 +749,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
     decoration: BoxDecoration(
       color: _surfaceColor,
       borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 24)],
     ),
     child: Column(
       children: [
@@ -734,14 +769,14 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
   Widget _buildTextField(String label, String value) => TextFormField(
     controller: TextEditingController(text: value),
     readOnly: true,
-    style: const TextStyle(color: _textColor, fontSize: 14),
+    style: TextStyle(color: _textColor, fontSize: 14),
     decoration: InputDecoration(
       labelText: label,
+      labelStyle: TextStyle(color: _secondaryTextColor),
       filled: true,
       fillColor: _backgroundColor,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      labelStyle: const TextStyle(color: _secondaryTextColor),
     ),
   );
 
@@ -750,7 +785,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
     decoration: BoxDecoration(
       color: _surfaceColor,
       borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 24, spreadRadius: 2)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.03), blurRadius: 24, spreadRadius: 2)],
     ),
     child: Column(
       children: [
@@ -769,7 +804,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
                   final animatedProgress = (widget.vehicleSize > 0 ? widget.items.fold(0, (sum, item) => sum + item.size * item.quantity) / widget.vehicleSize : 0.0) * _animation.value;
                   return Text(
                     widget.vehicleSize > 0 ? '${(animatedProgress * 100).toStringAsFixed(0)}%' : '0%',
-                    style: const TextStyle(color: _textColor, fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: _textColor, fontSize: 20, fontWeight: FontWeight.bold),
                   );
                 },
               ),
@@ -780,11 +815,11 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
         _buildSummaryItem('Covered Items', widget.items.where((item) => item.covered.toLowerCase() == 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
         _buildSummaryItem('Uncovered Items', widget.items.where((item) => item.covered.toLowerCase() != 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
         _buildSummaryItem('Total Items', widget.items.fold(0, (sum, item) => sum + item.quantity).toString()),
-        const Divider(),
+        const Divider(color: Colors.grey),
         _buildSummaryItem('Subtotal', '${widget.existingOrder['subtotal']?.toStringAsFixed(0) ?? '0'}/-'),
         _buildSummaryItem('Tax', '${widget.existingOrder['tax_amount']?.toStringAsFixed(0) ?? '0'}/-'),
-        const Divider(),
-        _buildSummaryItem('Total', '${widget.existingOrder['total_after_tax']?.toStringAsFixed(0) ?? '0'}/-', valueStyle: const TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+        const Divider(color: Colors.grey),
+        _buildSummaryItem('Total', '${widget.existingOrder['total_after_tax']?.toStringAsFixed(0) ?? '0'}/-', valueStyle: TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
       ],
     ),
   );
@@ -794,8 +829,8 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage> with Sing
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: _secondaryTextColor)),
-        Text(value, style: valueStyle ?? const TextStyle(color: _textColor)),
+        Text(label, style: TextStyle(color: _secondaryTextColor)),
+        Text(value, style: valueStyle ?? TextStyle(color: _textColor)),
       ],
     ),
   );
@@ -808,8 +843,17 @@ class AddPurchaseItemsPage extends StatefulWidget {
   final int vehicleSize;
   final String? orderId;
   final Map<String, dynamic>? existingOrder;
+  final bool isDarkMode;
 
-  const AddPurchaseItemsPage({Key? key, required this.companyName, required this.vehicleName, required this.vehicleSize, this.orderId, this.existingOrder}) : super(key: key);
+  const AddPurchaseItemsPage({
+    Key? key,
+    required this.companyName,
+    required this.vehicleName,
+    required this.vehicleSize,
+    this.orderId,
+    this.existingOrder,
+    required this.isDarkMode,
+  }) : super(key: key);
 
   @override
   _AddPurchaseItemsPageState createState() => _AddPurchaseItemsPageState();
@@ -828,6 +872,13 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
   bool _isLoading = false;
   late AnimationController _controller;
   late Animation<double> _animation;
+
+  // Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _secondaryTextColor => widget.isDarkMode ? const Color(0xFFB0B0C0) : const Color(0xFF4A4A4A);
+  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   @override
   void initState() {
@@ -1005,10 +1056,10 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: _backgroundColor,
-        title: Text(widget.orderId != null ? "Edit Purchase Order" : "Add Purchase Order", style: const TextStyle(color: _textColor)),
+        backgroundColor: _surfaceColor,
+        title: Text(widget.orderId != null ? "Edit Purchase Order" : "Add Purchase Order", style: TextStyle(color: _textColor)),
         elevation: 0,
-        iconTheme: const IconThemeData(color: _textColor),
+        iconTheme: IconThemeData(color: _textColor),
       ),
       backgroundColor: _backgroundColor,
       body: Stack(
@@ -1037,7 +1088,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                         Container(
                           height: 200,
                           alignment: Alignment.center,
-                          child: const Text("No items added", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
+                          child: Text("No items added", style: TextStyle(color: _secondaryTextColor, fontSize: 16)),
                         ),
                     ],
                   ),
@@ -1061,7 +1112,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
               ],
             ),
           ),
-          if (_isLoading) const Center(child: CircularProgressIndicator(color: _primaryColor)),
+          if (_isLoading) Center(child: CircularProgressIndicator(color: _primaryColor)),
         ],
       ),
     );
@@ -1073,7 +1124,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     decoration: BoxDecoration(
       color: _primaryColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 12)],
     ),
     child: const Row(
       children: [
@@ -1097,26 +1148,29 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
       decoration: BoxDecoration(
         color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 8)],
       ),
       child: Stack(
         children: [
           Row(
             children: [
-              Expanded(flex: 2, child: Center(child: Text(item.quality, style: const TextStyle(color: _textColor, fontSize: 14)))),
-              Expanded(flex: 2, child: Center(child: Text(item.name, style: const TextStyle(color: _textColor, fontSize: 14)))),
+              Expanded(flex: 2, child: Center(child: Text(item.quality, style: TextStyle(color: _textColor, fontSize: 14)))),
+              Expanded(flex: 2, child: Center(child: Text(item.name, style: TextStyle(color: _textColor, fontSize: 14)))),
               Expanded(
                   flex: 1,
                   child: Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                          color: item.covered.toLowerCase() == "yes" ? Colors.green[widget.isDarkMode ? 700 : 100] : Colors.red[widget.isDarkMode ? 700 : 100],
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           item.covered,
-                          style: TextStyle(color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800], fontSize: 12, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                              color: item.covered.toLowerCase() == "yes" ? Colors.green[widget.isDarkMode ? 100 : 800] : Colors.red[widget.isDarkMode ? 100 : 800],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500),
                         ),
                       ))),
               Expanded(
@@ -1125,7 +1179,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       child: TextFormField(
                         initialValue: item.quantity.toString(),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: _textColor, fontSize: 14),
+                        style: TextStyle(color: _textColor, fontSize: 14),
                         decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
                         keyboardType: TextInputType.number,
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -1145,7 +1199,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       child: TextFormField(
                         initialValue: item.price.toStringAsFixed(0),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: _textColor, fontSize: 14),
+                        style: TextStyle(color: _textColor, fontSize: 14),
                         decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
                         keyboardType: TextInputType.number,
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -1165,7 +1219,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       child: TextFormField(
                         initialValue: item.discount.toStringAsFixed(0),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: _textColor, fontSize: 14),
+                        style: TextStyle(color: _textColor, fontSize: 14),
                         decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
                         keyboardType: TextInputType.number,
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -1184,9 +1238,9 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                   child: Center(
                       child: Text(
                         (item.quantity * item.price * (1 - item.discount / 100)).toStringAsFixed(0),
-                        style: const TextStyle(color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
+                        style: TextStyle(color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
                       ))),
-              Expanded(flex: 1, child: Center(child: Text(item.stockQuantity.toString(), style: const TextStyle(color: _textColor, fontSize: 14)))),
+              Expanded(flex: 1, child: Center(child: Text(item.stockQuantity.toString(), style: TextStyle(color: _textColor, fontSize: 14)))),
             ],
           ),
           if (_selectedItemIndex == index)
@@ -1220,7 +1274,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     decoration: BoxDecoration(
       color: _surfaceColor,
       borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 24)],
     ),
     child: Column(
       children: [
@@ -1264,17 +1318,17 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
 
   Widget _buildTextField(String label, TextEditingController controller, {bool isNumeric = false, bool enabled = true, void Function(String)? onChanged}) => TextFormField(
     controller: controller,
-    style: const TextStyle(color: _textColor, fontSize: 14),
+    style: TextStyle(color: _textColor, fontSize: 14),
     decoration: InputDecoration(
       labelText: label,
+      labelStyle: TextStyle(color: _secondaryTextColor),
       filled: true,
       fillColor: _backgroundColor,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      labelStyle: const TextStyle(color: _secondaryTextColor),
     ),
     keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
-    inputFormatters: isNumeric ? [FilteringTextInputFormatter.digitsOnly] : null,
+    inputFormatters: isNumeric ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))] : null,
     validator: enabled ? (value) => value!.isEmpty ? 'Required field' : null : null,
     enabled: enabled && !_isLoading,
     onChanged: onChanged,
@@ -1284,15 +1338,15 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     controller: controller,
     readOnly: true,
     onTap: _isLoading ? null : () => _selectDate(controller),
-    style: const TextStyle(color: _textColor, fontSize: 14),
+    style: TextStyle(color: _textColor, fontSize: 14),
     decoration: InputDecoration(
       labelText: label,
+      labelStyle: TextStyle(color: _secondaryTextColor),
       filled: true,
       fillColor: _backgroundColor,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      labelStyle: const TextStyle(color: _secondaryTextColor),
-      suffixIcon: const Icon(Icons.calendar_today, color: _secondaryTextColor),
+      suffixIcon: Icon(Icons.calendar_today, color: _secondaryTextColor),
     ),
     validator: (value) => value!.isEmpty ? 'Required field' : null,
   );
@@ -1302,7 +1356,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     decoration: BoxDecoration(
       color: _surfaceColor,
       borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 24, spreadRadius: 2)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.03), blurRadius: 24, spreadRadius: 2)],
     ),
     child: Column(
       children: [
@@ -1321,7 +1375,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                   final animatedProgress = (widget.vehicleSize > 0 ? _items.fold(0, (sum, item) => sum + item.size * item.quantity) / widget.vehicleSize : 0.0) * _animation.value;
                   return Text(
                     widget.vehicleSize > 0 ? '${(animatedProgress * 100).toStringAsFixed(0)}%' : '0%',
-                    style: const TextStyle(color: _textColor, fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(color: _textColor, fontSize: 20, fontWeight: FontWeight.bold),
                   );
                 },
               ),
@@ -1332,11 +1386,11 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
         _buildSummaryItem('Covered Items', _items.where((item) => item.covered.toLowerCase() == 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
         _buildSummaryItem('Uncovered Items', _items.where((item) => item.covered.toLowerCase() != 'yes').fold(0, (sum, item) => sum + item.quantity).toString()),
         _buildSummaryItem('Total Items', _items.fold(0, (sum, item) => sum + item.quantity).toString()),
-        const Divider(),
+        Divider(color: widget.isDarkMode ? Colors.grey[700] : Colors.grey),
         _buildSummaryItem('Subtotal', '${_subtotal.toStringAsFixed(0)}/-'),
         _buildSummaryItem('Tax', '${(_total - _subtotal).toStringAsFixed(0)}/-'),
-        const Divider(),
-        _buildSummaryItem('Total', '${_total.toStringAsFixed(0)}/-', valueStyle: const TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+        Divider(color: widget.isDarkMode ? Colors.grey[700] : Colors.grey),
+        _buildSummaryItem('Total', '${_total.toStringAsFixed(0)}/-', valueStyle: TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
       ],
     ),
   );
@@ -1346,8 +1400,8 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: _secondaryTextColor)),
-        Text(value, style: valueStyle ?? const TextStyle(color: _textColor)),
+        Text(label, style: TextStyle(color: _secondaryTextColor)),
+        Text(value, style: valueStyle ?? TextStyle(color: _textColor)),
       ],
     ),
   );
@@ -1365,7 +1419,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
             decoration: BoxDecoration(
               color: _surfaceColor,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 24)],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1374,12 +1428,14 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                   autofocus: true,
                   decoration: InputDecoration(
                     hintText: 'Search items...',
+                    hintStyle: TextStyle(color: _secondaryTextColor),
                     filled: true,
                     fillColor: _backgroundColor,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    suffixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+                    suffixIcon: Icon(Icons.search, color: _secondaryTextColor),
                   ),
+                  style: TextStyle(color: _textColor),
                   onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
                 ),
                 const SizedBox(height: 16),
@@ -1390,7 +1446,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _firestore.collection('items').snapshots(),
                     builder: (_, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      if (!snapshot.hasData) return Center(child: CircularProgressIndicator(color: _primaryColor));
                       final items = snapshot.data!.docs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
                         return (data['itemName'] as String? ?? '').toLowerCase().contains(_searchQuery) ||
@@ -1419,7 +1475,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     decoration: BoxDecoration(
       color: _primaryColor,
       borderRadius: BorderRadius.circular(12),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 12)],
     ),
     child: const Row(
       children: [
@@ -1439,26 +1495,29 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
       decoration: BoxDecoration(
         color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 8)],
       ),
       child: Row(
         children: [
-          Expanded(child: Text(item.quality, style: const TextStyle(color: _textColor), textAlign: TextAlign.center)),
-          Expanded(child: Text(item.name, style: const TextStyle(color: _textColor), textAlign: TextAlign.center)),
+          Expanded(child: Text(item.quality, style: TextStyle(color: _textColor), textAlign: TextAlign.center)),
+          Expanded(child: Text(item.name, style: TextStyle(color: _textColor), textAlign: TextAlign.center)),
           Expanded(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                  color: item.covered.toLowerCase() == "yes" ? Colors.green[widget.isDarkMode ? 700 : 100] : Colors.red[widget.isDarkMode ? 700 : 100],
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   item.covered,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800], fontSize: 12, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                      color: item.covered.toLowerCase() == "yes" ? Colors.green[widget.isDarkMode ? 100 : 800] : Colors.red[widget.isDarkMode ? 100 : 800],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500),
                 ),
               )),
-          Expanded(child: Text(item.purchasePrice.toStringAsFixed(0), style: const TextStyle(color: _textColor), textAlign: TextAlign.center)),
+          Expanded(child: Text(item.purchasePrice.toStringAsFixed(0), style: TextStyle(color: _textColor), textAlign: TextAlign.center)),
         ],
       ),
     ),
@@ -1466,13 +1525,46 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
 
   Future<void> _selectDate(TextEditingController controller) async {
     if (_isLoading) return;
-    final pickedDate = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2101));
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+      builder: (context, child) {
+        return Theme(
+          data: widget.isDarkMode
+              ? ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: _primaryColor,
+              onPrimary: Colors.white,
+              surface: _surfaceColor,
+              onSurface: _textColor,
+            ),
+            dialogBackgroundColor: _backgroundColor,
+          )
+              : ThemeData.light().copyWith(
+            colorScheme: ColorScheme.light(
+              primary: _primaryColor,
+              onPrimary: Colors.white,
+              surface: _surfaceColor,
+              onSurface: _textColor,
+            ),
+            dialogBackgroundColor: _backgroundColor,
+          ),
+          child: child!,
+        );
+      },
+    );
     if (pickedDate != null) setState(() => controller.text = DateFormat('dd-MM-yyyy').format(pickedDate));
   }
 }
 
 // Helper Components
 class CompanyVehicleSelectionDialog extends StatefulWidget {
+  final bool isDarkMode;
+
+  const CompanyVehicleSelectionDialog({required this.isDarkMode});
+
   @override
   _CompanyVehicleSelectionDialogState createState() => _CompanyVehicleSelectionDialogState();
 }
@@ -1482,6 +1574,13 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
   String? selectedVehicle;
   int? selectedVehicleSize;
   bool _isLoading = false;
+
+  // Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _secondaryTextColor => widget.isDarkMode ? const Color(0xFFB0B0C0) : const Color(0xFF4A4A4A);
+  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   @override
   Widget build(BuildContext context) {
@@ -1494,28 +1593,29 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
         decoration: BoxDecoration(
           color: _surfaceColor,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(widget.isDarkMode ? 0.5 : 0.05), blurRadius: 24, offset: const Offset(0, 8))],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Select Company & Vehicle', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+            Text('Select Company & Vehicle', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
             const SizedBox(height: 20),
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('companies').snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const CircularProgressIndicator();
+                if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor);
                 return DropdownButtonFormField<String>(
                   dropdownColor: _surfaceColor,
                   decoration: InputDecoration(
                     labelText: 'Company',
-                    labelStyle: const TextStyle(color: _secondaryTextColor),
+                    labelStyle: TextStyle(color: _secondaryTextColor),
                     filled: true,
                     fillColor: _backgroundColor,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                  items: snapshot.data!.docs.map((doc) => DropdownMenuItem<String>(value: doc['name'], child: Text(doc['name'] ?? '', style: const TextStyle(color: _textColor)))).toList(),
+                  style: TextStyle(color: _textColor),
+                  items: snapshot.data!.docs.map((doc) => DropdownMenuItem<String>(value: doc['name'], child: Text(doc['name'] ?? '', style: TextStyle(color: _textColor)))).toList(),
                   onChanged: _isLoading ? null : (value) => setState(() => selectedCompany = value),
                   validator: (value) => value == null ? 'Required field' : null,
                 );
@@ -1525,21 +1625,22 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('vehicles').snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return const CircularProgressIndicator();
+                if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor);
                 return DropdownButtonFormField<String>(
                   dropdownColor: _surfaceColor,
                   decoration: InputDecoration(
                     labelText: 'Vehicle',
-                    labelStyle: const TextStyle(color: _secondaryTextColor),
+                    labelStyle: TextStyle(color: _secondaryTextColor),
                     filled: true,
                     fillColor: _backgroundColor,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
+                  style: TextStyle(color: _textColor),
                   items: snapshot.data!.docs
                       .map((doc) => DropdownMenuItem<String>(
                     value: doc['name'],
-                    child: Text(doc['name'] ?? '', style: const TextStyle(color: _textColor)),
+                    child: Text(doc['name'] ?? '', style: TextStyle(color: _textColor)),
                     onTap: () => selectedVehicleSize = doc['size'] as int? ?? 0,
                   ))
                       .toList(),
@@ -1558,7 +1659,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
+                  child: Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
                 ),
                 const SizedBox(width: 16),
                 ElevatedButton(
@@ -1574,7 +1675,7 @@ class _CompanyVehicleSelectionDialogState extends State<CompanyVehicleSelectionD
                       Navigator.pop(context, {'company': selectedCompany, 'vehicle': selectedVehicle, 'vehicleSize': selectedVehicleSize});
                     }
                   },
-                  child: const Text('Proceed', style: TextStyle(color: _surfaceColor, fontSize: 14)),
+                  child: const Text('Proceed', style: TextStyle(color: Colors.white, fontSize: 14)),
                 ),
               ],
             ),
@@ -1605,10 +1706,14 @@ class _DataCell extends StatelessWidget {
   const _DataCell(this.text, [this.width]);
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    width: width,
-    child: Center(child: Text(text, style: const TextStyle(color: _textColor, fontSize: 14), overflow: TextOverflow.ellipsis, maxLines: 1)),
-  );
+  Widget build(BuildContext context) {
+    final isDarkMode = context.findAncestorWidgetOfExactType<PurchaseOrdersPage>()?.isDarkMode ?? false;
+    final textColor = isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+    return SizedBox(
+      width: width,
+      child: Center(child: Text(text, style: TextStyle(color: textColor, fontSize: 14), overflow: TextOverflow.ellipsis, maxLines: 1)),
+    );
+  }
 }
 
 class _ActionCell extends StatelessWidget {
@@ -1617,8 +1722,21 @@ class _ActionCell extends StatelessWidget {
   final Function(DocumentSnapshot) onView;
   final Function(DocumentSnapshot) onEdit;
   final Function(DocumentSnapshot) onDelete;
+  final bool isDarkMode;
 
-  const _ActionCell(this.orderDoc, this.width, {required this.onView, required this.onEdit, required this.onDelete});
+  const _ActionCell(
+      this.orderDoc,
+      this.width, {
+        required this.onView,
+        required this.onEdit,
+        required this.onDelete,
+        required this.isDarkMode,
+      });
+
+  // Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _surfaceColor => isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   @override
   Widget build(BuildContext context) {
@@ -1627,9 +1745,51 @@ class _ActionCell extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(icon: const Icon(Icons.remove_red_eye, color: Colors.blue, size: 20), onPressed: () => onView(orderDoc), tooltip: 'View Order'),
-          IconButton(icon: const Icon(Icons.edit, color: _primaryColor, size: 20), onPressed: () => onEdit(orderDoc), tooltip: 'Edit Order'),
-          IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => onDelete(orderDoc), tooltip: 'Delete Order'),
+          // View Button
+          IconButton(
+            icon: Icon(
+              Icons.remove_red_eye,
+              color: Colors.blue, // Consistent color across modes
+              size: 20,
+            ),
+            onPressed: () => onView(orderDoc),
+            tooltip: 'View Order',
+            padding: const EdgeInsets.all(8),
+            splashColor: _primaryColor.withOpacity(0.2),
+            highlightColor: _primaryColor.withOpacity(0.1),
+            hoverColor: _primaryColor.withOpacity(0.05),
+            constraints: const BoxConstraints(),
+          ),
+          // Edit Button
+          IconButton(
+            icon: Icon(
+              Icons.edit,
+              color: _primaryColor, // Consistent color across modes
+              size: 20,
+            ),
+            onPressed: () => onEdit(orderDoc),
+            tooltip: 'Edit Order',
+            padding: const EdgeInsets.all(8),
+            splashColor: _primaryColor.withOpacity(0.2),
+            highlightColor: _primaryColor.withOpacity(0.1),
+            hoverColor: _primaryColor.withOpacity(0.05),
+            constraints: const BoxConstraints(),
+          ),
+          // Delete Button
+          IconButton(
+            icon: Icon(
+              Icons.delete,
+              color: Colors.red, // Consistent color across modes
+              size: 20,
+            ),
+            onPressed: () => onDelete(orderDoc),
+            tooltip: 'Delete Order',
+            padding: const EdgeInsets.all(8),
+            splashColor: Colors.red.withOpacity(0.2),
+            highlightColor: Colors.red.withOpacity(0.1),
+            hoverColor: Colors.red.withOpacity(0.05),
+            constraints: const BoxConstraints(),
+          ),
         ],
       ),
     );

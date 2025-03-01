@@ -24,7 +24,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final ScrollController _horizontalScrollController = ScrollController();
-  final double _mobileTableWidth = 1600; // Increased to accommodate new print button
+  final double _mobileTableWidth = 1500; // Adjusted width after removing delete button
 
   late TabController _tabController;
 
@@ -77,67 +77,6 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         builder: (context) => PointOfSalePage(invoice: invoice),
       ),
     );
-  }
-
-  Future<void> _deleteTransaction(DocumentSnapshot transactionDoc) async {
-    final bool? confirmDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: _surfaceColor,
-        insetPadding: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: _surfaceColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24, offset: const Offset(0, 8))],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Confirm Delete', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
-              const SizedBox(height: 20),
-              const Text('Are you sure you want to delete this transaction?', style: TextStyle(fontSize: 14, color: _secondaryTextColor)),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Cancel', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
-                  ),
-                  const SizedBox(width: 16),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Delete', style: TextStyle(color: _surfaceColor, fontSize: 14)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (confirmDelete == true) {
-      try {
-        await _firestore.collection('invoices').doc(transactionDoc.id).delete();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Transaction deleted successfully!')));
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error deleting transaction: $e')));
-      }
-    }
   }
 
   Future<void> _printTransaction(DocumentSnapshot transactionDoc) async {
@@ -612,7 +551,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             Expanded(child: _DataCell(total)),
             Expanded(child: _DataCell(invoice.balanceDue > 0 ? pending : '', null, invoice.balanceDue > 0 ? 'Pending' : 'Paid', invoice.balanceDue > 0 ? Colors.red : Colors.green)),
             Expanded(child: _DataCell(date)),
-            Expanded(child: _ActionCell(transactionDoc, null, onView: _viewTransaction, onEdit: _editTransaction, onDelete: _deleteTransaction, onPrint: _printTransaction)),
+            Expanded(child: _ActionCell(transactionDoc, null, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _printTransaction)),
           ],
         ),
       ),
@@ -637,7 +576,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
           _HeaderCell('Total', 150),
           _HeaderCell('Pending', 150),
           _HeaderCell('Date', 150),
-          _HeaderCell('Actions', 200),
+          _HeaderCell('Actions', 150),
         ],
       ),
     ),
@@ -666,7 +605,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             _DataCell(total, 150),
             _DataCell(invoice.balanceDue > 0 ? pending : '', 150, invoice.balanceDue > 0 ? 'Pending' : 'Paid', invoice.balanceDue > 0 ? Colors.red : Colors.green),
             _DataCell(date, 150),
-            _ActionCell(transactionDoc, 200, onView: _viewTransaction, onEdit: _editTransaction, onDelete: _deleteTransaction, onPrint: _printTransaction),
+            _ActionCell(transactionDoc, 150, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _printTransaction),
           ],
         ),
       ),
@@ -883,10 +822,9 @@ class _ActionCell extends StatelessWidget {
   final double? width;
   final Function(DocumentSnapshot) onView;
   final Function(DocumentSnapshot) onEdit;
-  final Function(DocumentSnapshot) onDelete;
   final Function(DocumentSnapshot) onPrint;
 
-  const _ActionCell(this.transactionDoc, this.width, {required this.onView, required this.onEdit, required this.onDelete, required this.onPrint});
+  const _ActionCell(this.transactionDoc, this.width, {required this.onView, required this.onEdit, required this.onPrint});
 
   @override
   Widget build(BuildContext context) {
@@ -897,7 +835,6 @@ class _ActionCell extends StatelessWidget {
         children: [
           IconButton(icon: const Icon(Icons.remove_red_eye, color: Colors.blue, size: 20), onPressed: () => onView(transactionDoc), tooltip: 'View Transaction'),
           IconButton(icon: const Icon(Icons.edit, color: _primaryColor, size: 20), onPressed: () => onEdit(transactionDoc), tooltip: 'Edit Transaction'),
-          IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => onDelete(transactionDoc), tooltip: 'Delete Transaction'),
           IconButton(icon: const Icon(Icons.print, color: Colors.green, size: 20), onPressed: () => onPrint(transactionDoc), tooltip: 'Print Invoice'),
         ],
       ),

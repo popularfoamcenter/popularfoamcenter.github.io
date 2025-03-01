@@ -200,7 +200,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         itemName: item.itemName,
         covered: item.covered,
         qty: item.qty,
-        originalQty: item.qty,
+        originalQty: item.originalQty,
         price: item.price,
         discount: item.discount,
         total: item.total,
@@ -359,6 +359,27 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   }
 
   Future<bool> _checkStockAvailability() async {
+    if (widget.invoice != null) { // When editing
+      for (final item in _cartItems) {
+        final snapshot = await _firestore
+            .collection('items')
+            .where('itemName', isEqualTo: item.itemName)
+            .where('qualityName', isEqualTo: item.quality)
+            .limit(1)
+            .get();
+
+        if (snapshot.docs.isNotEmpty) {
+          final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
+          final qtyChange = item.qty - item.originalQty;
+          if (_selectedTransactionType != 'Return' && qtyChange > 0 && stock < qtyChange) {
+            return true; // Insufficient stock for increased quantity
+          }
+        }
+      }
+      return false;
+    }
+
+    // For new invoices
     for (final item in _cartItems) {
       final snapshot = await _firestore
           .collection('items')
@@ -371,37 +392,11 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
         final qtyChange = item.qty - item.originalQty;
         if (_selectedTransactionType != 'Return' && qtyChange > 0 && stock < qtyChange) {
-          return true; // Insufficient stock for the additional quantity
+          return true;
         }
       }
     }
     return false;
-  }
-
-  Future<void> _revertStockChanges(Transaction transaction, Invoice oldInvoice) async {
-    // Only revert if quantities have changed
-    for (final oldItem in oldInvoice.items) {
-      final newItem = _cartItems.firstWhere(
-            (item) => item.itemName == oldItem.itemName && item.quality == oldItem.quality,
-        orElse: () => oldItem, // If item removed, use oldItem for reversion
-      );
-      final qtyChange = newItem.qty - oldItem.qty;
-
-      if (qtyChange != 0) { // Only revert if qty changed
-        final snapshot = await _firestore
-            .collection('items')
-            .where('itemName', isEqualTo: oldItem.itemName)
-            .where('qualityName', isEqualTo: oldItem.quality)
-            .limit(1)
-            .get();
-        if (snapshot.docs.isNotEmpty) {
-          final ref = snapshot.docs.first.reference;
-          final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-          final adjustment = oldInvoice.type == 'Return' ? -oldItem.qty : oldItem.qty;
-          transaction.update(ref, {'stockQuantity': stock + adjustment});
-        }
-      }
-    }
   }
 
   Future<void> _validateAndUpdateStock(Transaction transaction) async {
@@ -420,10 +415,82 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
       final qtyChange = item.qty - item.originalQty;
 
-      if (qtyChange != 0) { // Only update stock if quantity changes
+      if (qtyChange != 0) {
         final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
         if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
         transaction.update(ref, {'stockQuantity': newStock});
+      }
+    }
+  }
+
+  Future<void> _updateStockForEditedItems(Transaction transaction) async {
+    if (_selectedTransactionType == 'Order Booking') return;
+
+    for (final newItem in _cartItems) {
+      final oldItem = widget.invoice!.items.firstWhere(
+            (item) => item.itemName == newItem.itemName && item.quality == newItem.quality,
+        orElse: () => CartItem(
+          quality: newItem.quality,
+          itemName: newItem.itemName,
+          covered: newItem.covered,
+          qty: 0.0,
+          originalQty: 0.0,
+          price: newItem.price,
+          discount: newItem.discount,
+          total: newItem.total,
+        ),
+      );
+
+      final qtyChange = newItem.qty - oldItem.qty;
+      if (qtyChange != 0) {
+        final snapshot = await _firestore
+            .collection('items')
+            .where('itemName', isEqualTo: newItem.itemName)
+            .where('qualityName', isEqualTo: newItem.quality)
+            .limit(1)
+            .get();
+
+        if (snapshot.docs.isNotEmpty) {
+          final ref = snapshot.docs.first.reference;
+          final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
+          final stockAdjustment = _selectedTransactionType == 'Return'
+              ? qtyChange
+              : -qtyChange;
+          final newStock = currentStock + stockAdjustment;
+
+          if (newStock < 0) {
+            throw Exception('Insufficient stock for ${newItem.itemName}');
+          }
+
+          transaction.update(ref, {'stockQuantity': newStock});
+        }
+      }
+    }
+
+    // Handle removed items
+    if (widget.invoice != null) {
+      for (final oldItem in widget.invoice!.items) {
+        final stillExists = _cartItems.any(
+                (item) => item.itemName == oldItem.itemName && item.quality == oldItem.quality
+        );
+
+        if (!stillExists && oldItem.qty > 0) {
+          final snapshot = await _firestore
+              .collection('items')
+              .where('itemName', isEqualTo: oldItem.itemName)
+              .where('qualityName', isEqualTo: oldItem.quality)
+              .limit(1)
+              .get();
+
+          if (snapshot.docs.isNotEmpty) {
+            final ref = snapshot.docs.first.reference;
+            final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
+            final stockAdjustment = _selectedTransactionType == 'Return'
+                ? -oldItem.qty
+                : oldItem.qty;
+            transaction.update(ref, {'stockQuantity': currentStock + stockAdjustment});
+          }
+        }
       }
     }
   }
@@ -471,57 +538,48 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         : _firestore.collection('invoices').doc();
     final invoiceNumber = isEditing ? widget.invoice!.invoiceNumber : 0;
 
-    // Check if only payment details changed
-    bool onlyPaymentChanged = isEditing &&
-        _cartItems.every((item) => item.qty == item.originalQty) &&
-        (subtotal != widget.invoice!.subtotal ||
-            _globalDiscount != widget.invoice!.globalDiscount ||
-            givenAmount != widget.invoice!.givenAmount);
-
-    final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
-      if (isEditing && !onlyPaymentChanged) {
-        await _revertStockChanges(transaction, widget.invoice!);
-      }
-      if (!onlyPaymentChanged) {
-        await _validateAndUpdateStock(transaction);
-      }
-
-      final customerData = _useCustomName
-          ? {
-        'id': '',
-        'name': _customCustomerNameController.text.trim().isEmpty
-            ? 'Walking Customer'
-            : _customCustomerNameController.text.trim(),
-        'number': _phoneController.text.trim()
-      }
-          : _selectedCustomer;
-
-      final tempInvoice = Invoice(
-        id: invoiceRef.id,
-        invoiceNumber: invoiceNumber,
-        customer: customerData,
-        type: _selectedTransactionType,
-        items: List.from(_cartItems),
-        subtotal: subtotal,
-        globalDiscount: _globalDiscount,
-        total: total,
-        givenAmount: givenAmount,
-        returnAmount: math.max(givenAmount - total, 0),
-        balanceDue: math.max(total - givenAmount, 0),
-        timestamp: FieldValue.serverTimestamp(),
-      );
-
-      isEditing
-          ? transaction.update(invoiceRef, tempInvoice.toMap())
-          : transaction.set(invoiceRef, tempInvoice.toMap());
-
-      return tempInvoice;
-    }).catchError((e) {
-      _showSnackBar('Transaction failed: $e', Colors.red);
-      throw e;
-    });
-
     try {
+      final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
+        if (isEditing) {
+          await _updateStockForEditedItems(transaction);
+        } else {
+          await _validateAndUpdateStock(transaction);
+        }
+
+        final customerData = _useCustomName
+            ? {
+          'id': '',
+          'name': _customCustomerNameController.text.trim().isEmpty
+              ? 'Walking Customer'
+              : _customCustomerNameController.text.trim(),
+          'number': _phoneController.text.trim()
+        }
+            : _selectedCustomer;
+
+        final tempInvoice = Invoice(
+          id: invoiceRef.id,
+          invoiceNumber: invoiceNumber,
+          customer: customerData,
+          type: _selectedTransactionType,
+          items: List.from(_cartItems),
+          subtotal: subtotal,
+          globalDiscount: _globalDiscount,
+          total: total,
+          givenAmount: givenAmount,
+          returnAmount: math.max(givenAmount - total, 0),
+          balanceDue: math.max(total - givenAmount, 0),
+          timestamp: isEditing ? widget.invoice!.timestamp : FieldValue.serverTimestamp(),
+        );
+
+        if (isEditing) {
+          transaction.update(invoiceRef, tempInvoice.toMap());
+        } else {
+          transaction.set(invoiceRef, tempInvoice.toMap());
+        }
+
+        return tempInvoice;
+      });
+
       Invoice finalInvoice = invoice;
       if (!isEditing) {
         final newInvoiceNumber = await _incrementInvoiceCounter();
@@ -561,8 +619,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
 
       return finalInvoice;
     } catch (e) {
-      _showSnackBar('Failed to update invoice number: $e', Colors.red);
-      return invoice;
+      _showSnackBar('Transaction failed: $e', Colors.red);
+      rethrow;
     }
   }
 

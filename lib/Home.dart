@@ -15,6 +15,7 @@ import 'package:pfc/transactionspage.dart';
 import 'package:pfc/vehicles.dart';
 import 'package:pfc/company.dart';
 import 'package:pfc/main.dart';
+import 'package:provider/provider.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -27,7 +28,7 @@ class _HomePageState extends State<HomePage> {
   late Widget _currentPage;
   String _selectedButton = "Dashboard";
   bool _isSidebarOpen = true;
-  int _darkModeState = 0; // 0: Full light, 1: Sidebar dark, 2: Full dark
+  late int _darkModeState; // 0: Full light, 1: Sidebar dark, 2: Full dark
   final double _sidebarWidth = 280;
 
   // Color Scheme
@@ -44,6 +45,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    final themeProvider = Provider.of<ThemeModeProvider>(context, listen: false);
+    _darkModeState = themeProvider.themeMode == ThemeMode.dark ? 2 : 0; // Set initial state based on provider
     _navigationItems = [
       {'icon': Icons.dashboard, 'label': 'Dashboard', 'page': Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.inventory_2, 'label': 'Inventory', 'page': InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
@@ -56,7 +59,7 @@ class _HomePageState extends State<HomePage> {
       {'icon': Icons.account_balance_sharp, 'label': 'Accounts', 'page': const AccountsPage()},
       {'icon': Icons.edit_note_rounded, 'label': 'Ledger', 'page': const CompanyLedgerPage()},
       {'icon': Icons.attach_money, 'label': 'Cash Register', 'page': const CashRegisterPage()},
-      {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': const PurchaseOrdersPage()},
+      {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2)},
       {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': const InvoiceListScreen()},
     ];
     _currentPage = _navigationItems[0]['page'] as Widget; // Default to Dashboard
@@ -78,6 +81,8 @@ class _HomePageState extends State<HomePage> {
   void _toggleDarkMode() {
     setState(() {
       _darkModeState = (_darkModeState + 1) % 3; // Cycle through 0, 1, 2
+      final themeProvider = Provider.of<ThemeModeProvider>(context, listen: false);
+      themeProvider.setThemeMode(_darkModeState == 2 ? ThemeMode.dark : ThemeMode.light);
       _navigationItems = _navigationItems.map((item) {
         if (item['label'] == 'Dashboard') {
           return {
@@ -91,6 +96,12 @@ class _HomePageState extends State<HomePage> {
             'label': item['label'],
             'page': InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
           };
+        } else if (item['label'] == 'Purchase Order') {
+          return {
+            'icon': item['icon'],
+            'label': item['label'],
+            'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2),
+          };
         }
         return item;
       }).toList();
@@ -98,6 +109,8 @@ class _HomePageState extends State<HomePage> {
         _currentPage = Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Inventory") {
         _currentPage = InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
+      } else if (_selectedButton == "Purchase Order") {
+        _currentPage = PurchaseOrdersPage(isDarkMode: _darkModeState == 2);
       }
     });
   }
@@ -105,91 +118,93 @@ class _HomePageState extends State<HomePage> {
   Future<void> _showLogoutConfirmationDialog() async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: _darkModeState >= 1 ? const Color(0xFF252541) : surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: _darkModeState >= 1 ? Colors.black.withOpacity(0.5) : Colors.black.withOpacity(0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Confirm Logout',
-                style: GoogleFonts.roboto(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: _darkModeState >= 1 ? Colors.white : textPrimary,
+      builder: (context) => Theme(
+        data: _darkModeState == 2 ? _darkTheme() : _lightTheme(),
+        child: Dialog(
+          backgroundColor: _darkModeState >= 1 ? const Color(0xFF252541) : surfaceWhite,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: _darkModeState >= 1 ? Colors.black.withOpacity(0.5) : Colors.black.withOpacity(0.05),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Are you sure you want to log out?',
-                style: GoogleFonts.roboto(
-                  fontSize: 14,
-                  color: _darkModeState >= 1 ? const Color(0xFFB0B0C0) : textSecondary,
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Confirm Logout',
+                  style: GoogleFonts.roboto(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: _darkModeState >= 1 ? Colors.white : textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text(
-                      'Cancel',
-                      style: GoogleFonts.roboto(
-                        color: _darkModeState >= 1 ? const Color(0xFFB0B0C0) : textSecondary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                const SizedBox(height: 16),
+                Text(
+                  'Are you sure you want to log out?',
+                  style: GoogleFonts.roboto(
+                    fontSize: 14,
+                    color: _darkModeState >= 1 ? const Color(0xFFB0B0C0) : textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.roboto(
+                          color: _darkModeState >= 1 ? const Color(0xFFB0B0C0) : textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text(
-                      'Logout',
-                      style: GoogleFonts.roboto(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'Logout',
+                        style: GoogleFonts.roboto(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
 
     if (confirmed == true) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-      );
+      final themeProvider = Provider.of<ThemeModeProvider>(context, listen: false);
+      themeProvider.setThemeMode(_darkModeState == 2 ? ThemeMode.dark : ThemeMode.light); // Sync theme before logout
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginPage()));
     }
   }
 
