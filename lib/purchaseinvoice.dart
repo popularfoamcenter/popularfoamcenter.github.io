@@ -39,7 +39,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
       if (dateValue is Timestamp) {
         date = dateValue.toDate();
       } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
+        date = DateFormat('dd-MM-yyyy').parse(dateValue);
       } else {
         date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
       }
@@ -52,11 +52,6 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
   void _viewInvoice(DocumentSnapshot invoiceDoc) {
     final invoice = invoiceDoc.data() as Map<String, dynamic>;
-    print('Retrieved Invoice Data: $invoice'); // Debug: Full invoice data
-    print('Retrieved Items: ${invoice['items']}'); // Debug: Items specifically
-    if (invoice['items'] == null || (invoice['items'] as List).isEmpty) {
-      print('Warning: No items found in invoice ${invoiceDoc.id}');
-    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -607,10 +602,7 @@ class _ActionCell extends StatelessWidget {
   }
 }
 
-
-// Color Scheme Matching PointOfSalePage
-
-// Data Models (unchanged)
+// Data Models
 class InvoiceItem {
   final String itemId;
   final String name;
@@ -672,7 +664,7 @@ class Item {
   );
 }
 
-// Invoice Screen (Redesigned)
+// Invoice Screen
 class InvoiceScreen extends StatefulWidget {
   final String company;
   final String? invoiceId;
@@ -692,7 +684,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final _formKey = GlobalKey<FormState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final List<InvoiceItem> _items = [];
-  List<InvoiceItem> _originalItems = [];
+  Map<String, int> _originalQuantities = {}; // Store original quantities by itemId
   double _subtotal = 0.0;
   double _total = 0.0;
   final TextEditingController _invoiceIdController = TextEditingController();
@@ -700,14 +692,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final TextEditingController _receiveDateController = TextEditingController();
   final TextEditingController _taxController = TextEditingController(text: '0.5');
   final ScrollController _itemsScrollController = ScrollController();
-   Color _primaryColor = Color(0xFF0D6EFD);
-   Color _textColor = Color(0xFF2D2D2D);
-   Color _secondaryTextColor = Color(0xFF4A4A4A);
-   Color _backgroundColor = Color(0xFFF8F9FA);
-   Color _surfaceColor = Colors.white;
 
   @override
-
   void initState() {
     super.initState();
     if (widget.existingInvoice != null) {
@@ -722,40 +708,28 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   void _initializeExistingInvoice() {
     final invoice = widget.existingInvoice!;
     _invoiceIdController.text = invoice['invoiceId'];
-    _invoiceDateController.text = _formatDate(invoice['invoiceDate']);
-    _receiveDateController.text = _formatDate(invoice['receiveDate']);
+    _invoiceDateController.text = invoice['invoiceDate'];
+    _receiveDateController.text = invoice['receiveDate'];
     _taxController.text = invoice['taxPercentage'].toString();
 
-    _originalItems = (invoice['items'] as List).map((item) => InvoiceItem(
-      itemId: item['itemId'],
-      name: item['name'],
-      quality: item['quality'],
-      packagingUnit: item['packagingUnit'],
-      quantity: (item['quantity'] as num).toInt(), // Cast to int
-      price: (item['price'] as num).toDouble(), // Cast to double
-      discount: (item['discount'] as num).toDouble(), // Cast to double
-      covered: item['isCovered'] ? "Yes" : "No",
-    )).toList();
-
-    _items.addAll(_originalItems);
-    _calculateTotal();
-  }
-
-  String _formatDate(dynamic dateValue) {
-    try {
-      DateTime date;
-      if (dateValue is Timestamp) {
-        date = dateValue.toDate();
-      } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
-      } else {
-        date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
-      }
-      return DateFormat('dd-MM-yyyy').format(date);
-    } catch (e) {
-      print('Error parsing date: $e');
-      return 'Invalid Date';
+    // Initialize items and original quantities
+    final List<dynamic> invoiceItems = invoice['items'] as List<dynamic>;
+    for (var item in invoiceItems) {
+      final invoiceItem = InvoiceItem(
+        itemId: item['itemId'],
+        name: item['name'],
+        quality: item['quality'],
+        packagingUnit: item['packagingUnit'],
+        quantity: (item['quantity'] as num).toInt(),
+        price: (item['price'] as num).toDouble(),
+        discount: (item['discount'] as num).toDouble(),
+        covered: item['isCovered'] ? "Yes" : "No",
+      );
+      _items.add(invoiceItem);
+      _originalQuantities[invoiceItem.itemId] = invoiceItem.quantity; // Store original quantity
     }
+
+    _calculateTotal();
   }
 
   Future<void> _addItem(Item item) async {
@@ -783,6 +757,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         discount: discount,
         covered: item.covered,
       ));
+      // If this is a new item (not in original), set original quantity to 0
+      if (!_originalQuantities.containsKey(item.id)) {
+        _originalQuantities[item.id] = 0;
+      }
       _calculateTotal();
     });
     Navigator.pop(context);
@@ -791,7 +769,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   void _calculateTotal() {
     _subtotal = _items.fold(
         0.0, (sum, item) => sum + (item.quantity * item.price * (1 - item.discount / 100)));
-    final tax = _subtotal * (double.parse(_taxController.text) / 100);
+    final tax = _subtotal * (double.tryParse(_taxController.text) ?? 0.0) / 100;
     _total = _subtotal + tax;
     setState(() {});
   }
@@ -799,14 +777,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _submitInvoice() async {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
-      print('No items to save'); // Debug: Confirm items list is empty
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please add at least one item')),
       );
       return;
     }
-
-    print('Items to save: ${_items.map((item) => item.toMap()).toList()}'); // Debug: Log items before saving
 
     final invoiceData = {
       'invoiceId': _invoiceIdController.text,
@@ -818,28 +793,25 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       'taxPercentage': double.parse(_taxController.text),
       'taxAmount': _total - _subtotal,
       'total': _total,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': widget.invoiceId == null ? FieldValue.serverTimestamp() : widget.existingInvoice!['createdAt'],
     };
-
-    print('Invoice Data to Save: $invoiceData'); // Debug: Log full invoice data
 
     try {
       if (widget.invoiceId != null) {
         await _updateStockQuantities();
         await _firestore.collection('purchaseinvoices').doc(widget.invoiceId).update(invoiceData);
-        print('Updated invoice with ID: ${widget.invoiceId}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invoice updated successfully!')),
+        );
       } else {
         final docRef = await _firestore.collection('purchaseinvoices').add(invoiceData);
         await _updateStockQuantities();
-        print('Saved new invoice with ID: ${docRef.id}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invoice saved successfully!')),
+        );
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invoice saved successfully!')),
-      );
       Navigator.pop(context);
     } catch (e) {
-      print('Error saving invoice: $e'); // Debug: Log any errors
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving invoice: $e')),
       );
@@ -847,18 +819,26 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   }
 
   Future<void> _updateStockQuantities() async {
-    if (widget.invoiceId != null) {
-      for (final item in _originalItems) {
+    for (final item in _items) {
+      final originalQty = _originalQuantities[item.itemId] ?? 0;
+      final newQty = item.quantity;
+      final qtyDifference = newQty - originalQty;
+
+      if (qtyDifference != 0) {
         await _firestore.collection('items').doc(item.itemId).update({
-          'stockQuantity': FieldValue.increment(-item.quantity),
+          'stockQuantity': FieldValue.increment(qtyDifference),
         });
       }
     }
 
-    for (final item in _items) {
-      await _firestore.collection('items').doc(item.itemId).update({
-        'stockQuantity': FieldValue.increment(item.quantity),
-      });
+    // Handle items that were removed
+    for (final originalItemId in _originalQuantities.keys) {
+      if (!_items.any((item) => item.itemId == originalItemId)) {
+        final originalQty = _originalQuantities[originalItemId] ?? 0;
+        await _firestore.collection('items').doc(originalItemId).update({
+          'stockQuantity': FieldValue.increment(-originalQty),
+        });
+      }
     }
   }
 
@@ -1079,12 +1059,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.quantity = int.parse(value); // Parse as int
+                              item.quantity = int.parse(value);
                               _calculateTotal();
                             });
                           }
                         },
-
                       ))),
               Expanded(
                   flex: 1,
@@ -1102,7 +1081,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.price = double.parse(value); // Parse as double
+                              item.price = double.parse(value);
                               _calculateTotal();
                             });
                           }
@@ -1124,7 +1103,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.discount = double.parse(value); // Parse as double
+                              item.discount = double.parse(value);
                               _calculateTotal();
                             });
                           }
@@ -1194,8 +1173,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         const SizedBox(height: 24),
         _buildTextField('Challan #', _invoiceIdController),
         const SizedBox(height: 16),
-        _buildTextField('Company', TextEditingController(text: widget.company),
-            enabled: false),
+        _buildTextField('Company', TextEditingController(text: widget.company), enabled: false),
         const SizedBox(height: 16),
         _buildDateField('Invoice Date', _invoiceDateController),
         const SizedBox(height: 16),
@@ -1259,7 +1237,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       labelStyle: TextStyle(color: _secondaryTextColor),
-      suffixIcon:  Icon(Icons.calendar_today, color: _secondaryTextColor),
+      suffixIcon: Icon(Icons.calendar_today, color: _secondaryTextColor),
     ),
     validator: (value) => value!.isEmpty ? 'Required field' : null,
   );
@@ -1335,7 +1313,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    suffixIcon:  Icon(Icons.search, color: _secondaryTextColor),
+                    suffixIcon: Icon(Icons.search, color: _secondaryTextColor),
                   ),
                   onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
                 ),
@@ -1347,11 +1325,19 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _firestore.collection('items').snapshots(),
                     builder: (_, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
                       final items = snapshot.data!.docs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
-                        return data['itemName'].toString().toLowerCase().contains(_searchQuery) ||
-                            data['qualityName'].toString().toLowerCase().contains(_searchQuery);
+                        return data['itemName']
+                            .toString()
+                            .toLowerCase()
+                            .contains(_searchQuery) ||
+                            data['qualityName']
+                                .toString()
+                                .toLowerCase()
+                                .contains(_searchQuery);
                       }).toList();
                       return ListView.separated(
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -1427,14 +1413,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: item.covered.toLowerCase() == "yes" ? Colors.green[100] : Colors.red[100],
+                  color: item.covered.toLowerCase() == "yes"
+                      ? Colors.green[100]
+                      : Colors.red[100],
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   item.covered,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: item.covered.toLowerCase() == "yes" ? Colors.green[800] : Colors.red[800],
+                    color: item.covered.toLowerCase() == "yes"
+                        ? Colors.green[800]
+                        : Colors.red[800],
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -1450,9 +1440,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
   int? _selectedItemIndex;
 }
-// ======================
+
 // Invoice View Screen (Read-Only)
-// ======================
 class InvoiceViewScreen extends StatelessWidget {
   final String company;
   final String invoiceId;
@@ -1464,7 +1453,7 @@ class InvoiceViewScreen extends StatelessWidget {
     required this.company,
     required this.invoiceId,
     required this.existingInvoice,
-  }) : items = const []; // Default value, overridden in factory
+  }) : items = const [];
 
   factory InvoiceViewScreen.fromData({
     required String company,
@@ -1503,7 +1492,7 @@ class InvoiceViewScreen extends StatelessWidget {
       if (dateValue is Timestamp) {
         date = dateValue.toDate();
       } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
+        date = DateFormat('dd-MM-yyyy').parse(dateValue);
       } else {
         date = DateTime.fromMillisecondsSinceEpoch(dateValue.millisecondsSinceEpoch);
       }
@@ -1516,7 +1505,6 @@ class InvoiceViewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('InvoiceViewScreen Items: ${items.map((item) => item.toMap()).toList()}'); // Debug: Log items
     return Scaffold(
       appBar: AppBar(
         backgroundColor: _backgroundColor,
@@ -1576,7 +1564,6 @@ class InvoiceViewScreen extends StatelessWidget {
       ),
     );
   }
-
 
   Widget _buildItemsHeader() => Container(
     height: 56,
@@ -1713,7 +1700,8 @@ class InvoiceViewScreen extends StatelessWidget {
             flex: 1,
             child: Center(
                 child: Text(
-                  (item.quantity * item.price * (1 - item.discount / 100)).toStringAsFixed(0),
+                  (item.quantity * item.price * (1 - item.discount / 100))
+                      .toStringAsFixed(0),
                   style: TextStyle(
                       color: _textColor, fontWeight: FontWeight.bold, fontSize: 14),
                 ))),
@@ -1736,9 +1724,9 @@ class InvoiceViewScreen extends StatelessWidget {
         const SizedBox(height: 16),
         _buildTextField('Company', company),
         const SizedBox(height: 16),
-        _buildTextField('Invoice Date', _formatDate(existingInvoice['invoiceDate'])),
+        _buildTextField('Invoice Date', existingInvoice['invoiceDate']),
         const SizedBox(height: 16),
-        _buildTextField('Receive Date', _formatDate(existingInvoice['receiveDate'])),
+        _buildTextField('Receive Date', existingInvoice['receiveDate']),
         const SizedBox(height: 16),
         _buildTextField('Tax Percentage (%)', existingInvoice['taxPercentage'].toString()),
       ],
@@ -1804,9 +1792,7 @@ class InvoiceViewScreen extends StatelessWidget {
   );
 }
 
-// ======================
 // Helper Components
-// ======================
 class CompanySelectionDialog extends StatefulWidget {
   @override
   _CompanySelectionDialogState createState() => _CompanySelectionDialogState();
@@ -1997,7 +1983,6 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
                       !item.quality.toLowerCase().contains(_searchQuery)) {
                     return const SizedBox.shrink();
                   }
-
                   return GestureDetector(
                     onTap: () => Navigator.pop(context, item),
                     child: Container(
@@ -2075,7 +2060,3 @@ class _ItemSelectionDialogState extends State<ItemSelectionDialog> {
     );
   }
 }
-
-// ======================
-// Data Models
-// ======================

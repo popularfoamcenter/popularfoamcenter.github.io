@@ -11,7 +11,8 @@ class ProcessedTransaction {
   final double balance;
   final DateTime date;
 
-  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount, this.balance, this.date);
+  ProcessedTransaction(
+      this.doc, this.type, this.creditAmount, this.debitAmount, this.balance, this.date);
 }
 
 class AccountTotal {
@@ -28,11 +29,19 @@ class ProcessedData {
   final double finalBalance;
   final Map<String, AccountTotal> accountTotals;
 
-  ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.finalBalance, this.accountTotals);
+  ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.finalBalance,
+      this.accountTotals);
 }
 
 class CompanyLedgerPage extends StatefulWidget {
-  const CompanyLedgerPage({Key? key}) : super(key: key);
+  final bool isDarkMode;
+  final VoidCallback toggleDarkMode;
+
+  const CompanyLedgerPage({
+    Key? key,
+    required this.isDarkMode,
+    required this.toggleDarkMode,
+  }) : super(key: key);
 
   @override
   State<CompanyLedgerPage> createState() => _CompanyLedgerPageState();
@@ -40,14 +49,11 @@ class CompanyLedgerPage extends StatefulWidget {
 
 class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   final CollectionReference _companies = FirebaseFirestore.instance.collection('companies');
-  final CollectionReference _purchaseInvoices = FirebaseFirestore.instance.collection('purchaseinvoices');
-  final CollectionReference _cashRegisters = FirebaseFirestore.instance.collection('cash_registers');
+  final CollectionReference _purchaseInvoices =
+  FirebaseFirestore.instance.collection('purchaseinvoices');
+  final CollectionReference _cashRegisters =
+  FirebaseFirestore.instance.collection('cash_registers');
   final CollectionReference _accounts = FirebaseFirestore.instance.collection('accounts');
-
-  final Color _primaryColor = const Color(0xFF0D6EFD);
-  final Color _textColor = const Color(0xFF2D2D2D);
-  final Color _backgroundColor = const Color(0xFFF8F9FA);
-  final Color _surfaceColor = Colors.white;
 
   String? _selectedCompanyId;
   String? _selectedCompanyName;
@@ -55,20 +61,35 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   String? _openingDate;
   double _balanceLimit = 0.0;
   double _balanceAmount = 0.0;
-  double _currentBalance = 0.0;
   DateTime? _fromDate;
   DateTime? _toDate;
-  bool _showSummary = false;
+
+  // Adjusted Color Scheme
+  Color get _primaryColor => const Color(0xFF0D6EFD);
+  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+  Color get _secondaryTextColor => widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
+  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   Stream<List<DocumentSnapshot>> get _combinedTransactions {
     if (_selectedCompanyId == null || _selectedCompanyName == null) {
+      print('No company selected yet.');
       return Stream.value([]);
     }
 
+    print('Fetching transactions for company: $_selectedCompanyName (ID: $_selectedCompanyId)');
     return CombineLatestStream.combine2(
       _purchaseInvoices.where('company', isEqualTo: _selectedCompanyName).snapshots(),
       _cashRegisters.where('entity_id', isEqualTo: _selectedCompanyId).snapshots(),
           (QuerySnapshot purchases, QuerySnapshot cash) {
+        print('Purchase Invoices fetched: ${purchases.docs.length}');
+        for (var doc in purchases.docs) {
+          print('Purchase Invoice: ${doc.id}, Data: ${doc.data()}');
+        }
+        print('Cash Registers fetched: ${cash.docs.length}');
+        for (var doc in cash.docs) {
+          print('Cash Register: ${doc.id}, Data: ${doc.data()}');
+        }
         List<DocumentSnapshot> transactions = [];
         transactions.addAll(purchases.docs);
         transactions.addAll(cash.docs);
@@ -84,11 +105,13 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     Map<String, AccountTotal> accountTotals = {};
     List<ProcessedTransaction> processed = [];
 
-    // Sort and filter transactions by date
+    print('Processing ${transactions.length} transactions...');
     transactions.sort((a, b) {
       DateTime? aDate = _getDate(a);
       DateTime? bDate = _getDate(b);
-      return aDate?.compareTo(bDate ?? DateTime(0)) ?? 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+      return aDate.compareTo(bDate);
     });
 
     for (var doc in transactions) {
@@ -96,47 +119,49 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       final amount = (isPurchase ? doc['total'] : doc['amount'])?.toDouble() ?? 0.0;
       final date = _getDate(doc);
 
-      // Date filtering
-      if (date == null) continue;
+      if (date == null) {
+        print('Skipping transaction ${doc.id} due to invalid date.');
+        continue;
+      }
       if (_fromDate != null && date.isBefore(_fromDate!)) continue;
       if (_toDate != null && date.isAfter(_toDate!)) continue;
 
       String type;
+      String accountName;
 
       if (isPurchase) {
         type = 'Credit';
+        accountName = 'Purchase Invoices';
         totalCredit += amount;
         currentBalance += amount;
-
-        accountTotals.update(
-          'Purchase Invoices',
-              (value) => AccountTotal(value.credit + amount, value.debit),
-          ifAbsent: () => AccountTotal(amount, 0),
-        );
+        print('Processed Purchase Invoice ${doc.id}: Amount: $amount, Balance: $currentBalance');
       } else {
         final accountId = doc['account_id'];
         final account = await _accounts.doc(accountId).get();
-        final accountName = account['name'] ?? 'Unknown Account';
+        accountName = account['name'] ?? 'Unknown Account';
         type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
 
         if (type == 'Credit') {
           totalCredit += amount;
           currentBalance += amount;
-          accountTotals.update(
-            accountName,
-                (value) => AccountTotal(value.credit + amount, value.debit),
-            ifAbsent: () => AccountTotal(amount, 0),
-          );
         } else {
           totalDebit += amount;
           currentBalance -= amount;
-          accountTotals.update(
-            accountName,
-                (value) => AccountTotal(value.credit, value.debit + amount),
-            ifAbsent: () => AccountTotal(0, amount),
-          );
         }
+        print('Processed Cash Transaction ${doc.id}: Type: $type, Amount: $amount, Balance: $currentBalance');
       }
+
+      accountTotals.update(
+        accountName,
+            (value) => AccountTotal(
+          value.credit + (type == 'Credit' ? amount : 0),
+          value.debit + (type == 'Debit' ? amount : 0),
+        ),
+        ifAbsent: () => AccountTotal(
+          type == 'Credit' ? amount : 0,
+          type == 'Debit' ? amount : 0,
+        ),
+      );
 
       processed.add(ProcessedTransaction(
         doc,
@@ -148,16 +173,21 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       ));
     }
 
+    print('Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit');
     return ProcessedData(processed, totalCredit, totalDebit, currentBalance, accountTotals);
   }
 
   DateTime? _getDate(DocumentSnapshot doc) {
     try {
       if (doc.reference.parent.id == 'purchaseinvoices') {
-        return DateFormat('yyyy-MM-dd').parse(doc['invoiceDate']);
+        final invoiceDate = doc['invoiceDate'];
+        print('Parsing invoiceDate for ${doc.id}: $invoiceDate');
+        return DateFormat('dd-MM-yyyy').parse(invoiceDate);
       }
-      return (doc['created_at'] as Timestamp?)?.toDate();
+      final createdAt = doc['created_at'] as Timestamp?;
+      return createdAt?.toDate();
     } catch (e) {
+      print('Error parsing date for ${doc.id}: $e');
       return null;
     }
   }
@@ -168,16 +198,59 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       initialDate: DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: widget.isDarkMode ? ThemeData.dark() : ThemeData.light(),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
-        if (isFromDate) {
-          _fromDate = picked;
-        } else {
-          _toDate = picked;
-        }
+        if (isFromDate) _fromDate = picked;
+        else _toDate = picked;
       });
     }
+  }
+
+  void _showSummaryBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: StreamBuilder<List<DocumentSnapshot>>(
+            stream: _combinedTransactions,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return FutureBuilder<ProcessedData>(
+                future: _processTransactions(snapshot.data!),
+                builder: (context, asyncSnapshot) {
+                  if (!asyncSnapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final data = asyncSnapshot.data!;
+                  return SingleChildScrollView(
+                    child: _buildFooter(
+                      data.totalCredit,
+                      data.totalDebit,
+                      data.finalBalance,
+                      data.accountTotals,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -186,12 +259,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       appBar: AppBar(
         title: Row(
           children: [
-            const Text('Ledger', style: TextStyle(fontSize: 18)),
-            const SizedBox(width: 10),
+            Text('Company Ledger', style: TextStyle(color: _textColor)), // Removed const
+            const SizedBox(width: 16),
             Expanded(child: _buildCompanyDropdown()),
-            const SizedBox(width: 10),
+            const SizedBox(width: 16),
             _buildDateFilterChip('From', _fromDate, true),
-            const SizedBox(width: 10),
+            const SizedBox(width: 16),
             _buildDateFilterChip('To', _toDate, false),
           ],
         ),
@@ -200,19 +273,25 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         iconTheme: IconThemeData(color: _textColor),
         actions: [
           IconButton(
-            icon: Icon(_showSummary ? Icons.visibility_off : Icons.visibility),
-            onPressed: () => setState(() => _showSummary = !_showSummary),
+            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+            color: _textColor,
+            onPressed: widget.toggleDarkMode,
           ),
         ],
       ),
       backgroundColor: _backgroundColor,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showSummaryBottomSheet(context),
+        backgroundColor: _primaryColor,
+        child: const Icon(Icons.info_outline, color: Colors.white),
+      ),
       body: Column(
         children: [
           if (_selectedCompanyId != null) ...[
-            _buildOpeningBalanceCard(),
-            const SizedBox(height: 16),
-            _buildTableHeader(),
-            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: _buildOpeningBalanceCard(),
+            ),
             Expanded(
               child: StreamBuilder<List<DocumentSnapshot>>(
                 stream: _combinedTransactions,
@@ -223,12 +302,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
                     return Center(
-                      child: Column(
-                        children: [
-                          Text('No transactions found', style: TextStyle(color: _textColor)),
-                          if (_showSummary) _buildFooter(0, 0, _balanceAmount, {}),
-                        ],
-                      ),
+                      child: Text('No transactions found', style: TextStyle(color: _textColor)),
                     );
                   }
 
@@ -240,24 +314,26 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                       }
 
                       if (asyncSnapshot.hasError) {
-                        return Center(child: Text('Error loading transactions'));
+                        print('Error in FutureBuilder: ${asyncSnapshot.error}');
+                        return Center(
+                            child: Text('Error loading transactions',
+                                style: TextStyle(color: _textColor)));
                       }
 
                       final data = asyncSnapshot.data!;
                       return Column(
                         children: [
+                          _buildTableHeader(),
+                          const SizedBox(height: 8),
                           Expanded(
                             child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(horizontal: 24),
                               itemCount: data.transactions.length,
                               separatorBuilder: (context, index) => const SizedBox(height: 8),
-                              itemBuilder: (context, index) {
-                                final pt = data.transactions[index];
-                                return _buildTransactionRow(pt);
-                              },
+                              itemBuilder: (context, index) =>
+                                  _buildTransactionRow(data.transactions[index]),
                             ),
                           ),
-                          if (_showSummary) _buildFooter(data.totalCredit, data.totalDebit, data.finalBalance, data.accountTotals),
                         ],
                       );
                     },
@@ -274,15 +350,15 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   Widget _buildDateFilterChip(String label, DateTime? date, bool isFromDate) {
     return InputChip(
       label: Text(
-        date != null ? DateFormat('MMM dd').format(date) : label,
+        date != null ? DateFormat('dd-MM-yyyy').format(date) : label,
         style: TextStyle(
-          color: date != null ? _primaryColor : _textColor,
+          color: date != null ? _primaryColor : _secondaryTextColor,
           fontWeight: FontWeight.w500,
         ),
       ),
       backgroundColor: _surfaceColor,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: _primaryColor.withOpacity(0.3)),
       ),
       onPressed: () => _selectDate(context, isFromDate),
@@ -297,11 +373,22 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
           return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
         }
 
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          print('No companies found in Firestore.');
+          return const Text('No companies available');
+        }
+
         return Container(
+          height: 56,
           decoration: BoxDecoration(
             color: _surfaceColor,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _primaryColor.withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4)),
+            ],
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: DropdownButtonHideUnderline(
@@ -309,23 +396,15 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
               isExpanded: true,
               dropdownColor: _surfaceColor,
               value: _selectedCompanyId,
-              hint: Text(
-                'Select company',
-                style: TextStyle(
-                  color: _textColor.withOpacity(0.6),
-                  fontSize: 16,
-                ),
-              ),
+              hint: Text('Select company',
+                  style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
               icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-              items: snapshot.data?.docs.map((company) {
+              items: snapshot.data!.docs.map((company) {
                 return DropdownMenuItem<String>(
                   value: company.id,
                   child: Text(
                     company['name'] ?? 'Unnamed',
-                    style: TextStyle(
-                      color: _textColor,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(color: _textColor, fontSize: 14),
                   ),
                 );
               }).toList(),
@@ -338,7 +417,8 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   _openingDate = company['balance_date'] ?? 'N/A';
                   _balanceLimit = (company['balance_limit'] ?? 0).toDouble();
                   _balanceAmount = (company['balance_amount'] ?? 0).toDouble();
-                  _currentBalance = _balanceAmount;
+                  print(
+                      'Company selected: $_selectedCompanyName (ID: $_selectedCompanyId), Balance: $_balanceAmount');
                 });
               },
             ),
@@ -349,31 +429,23 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   }
 
   Widget _buildOpeningBalanceCard() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _surfaceColor,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildBalanceInfo('Balance Limit', '${_balanceLimit.toStringAsFixed(2)}/-'),
-              _buildBalanceInfo('Account Type', _openingType!),
-              _buildBalanceInfo('Opening Date', _formatDate(_openingDate)),
-            ],
-          ),
-        ),
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildBalanceInfo('Balance Limit', '${_balanceLimit.toStringAsFixed(0)}/-'),
+          _buildBalanceInfo('Account Type', _openingType!),
+          _buildBalanceInfo('Opening Date', _formatDate(_openingDate)),
+        ],
       ),
     );
   }
@@ -385,19 +457,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         Text(
           label,
           style: TextStyle(
-            color: _textColor.withOpacity(0.6),
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
+              color: _secondaryTextColor, fontSize: 14, fontWeight: FontWeight.w500),
         ),
         const SizedBox(height: 4),
         Text(
           value,
-          style: TextStyle(
-            color: _textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -405,27 +470,27 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
   Widget _buildTableHeader() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      height: 56,
+      margin: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
-        color: Color(0xFF0D6EFD),
+        color: _primaryColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4)),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Expanded(child: _HeaderText('Details')),
-            Expanded(child: _HeaderText('Date')),
-            Expanded(child: _HeaderText('Credit')),
-            Expanded(child: _HeaderText('Debit')),
-            Expanded(child: _HeaderText('Balance')),
+            Expanded(child: _HeaderCell('Date')),
+            Expanded(child: _HeaderCell('Details')),
+            Expanded(child: _HeaderCell('Credit')),
+            Expanded(child: _HeaderCell('Debit')),
+            Expanded(child: _HeaderCell('Balance')),
           ],
         ),
       ),
@@ -436,47 +501,45 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     final isPurchase = pt.doc.reference.parent.id == 'purchaseinvoices';
 
     return Container(
+      height: 56,
       decoration: BoxDecoration(
         color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
+              color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
+            Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(pt.date))),
             Expanded(
               child: isPurchase
-                  ? _buildTransactionText('Invoice ${pt.doc['invoiceId']}')
+                  ? _DataCell('Invoice ${pt.doc['invoiceId'] ?? 'N/A'}')
                   : FutureBuilder<DocumentSnapshot>(
                 future: _accounts.doc(pt.doc['account_id']).get(),
                 builder: (context, snapshot) {
-                  return _buildTransactionText(snapshot.data?['name'] ?? 'Unknown Account');
+                  return _DataCell(snapshot.data?['name'] ?? 'Unknown Account');
                 },
               ),
             ),
-            Expanded(child: _buildTransactionText(DateFormat('MMM dd').format(pt.date))),
             Expanded(
-              child: _buildTransactionText(
-                pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(2)}/-' : '-',
-                color: pt.creditAmount > 0 ? Colors.green : _textColor.withOpacity(0.6),
+              child: _DataCell(
+                pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
+                color: pt.creditAmount > 0 ? Colors.green : _secondaryTextColor,
               ),
             ),
             Expanded(
-              child: _buildTransactionText(
-                pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(2)}/-' : '-',
-                color: pt.debitAmount > 0 ? Colors.red : _textColor.withOpacity(0.6),
+              child: _DataCell(
+                pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
+                color: pt.debitAmount > 0 ? Colors.red : _secondaryTextColor,
               ),
             ),
             Expanded(
-              child: _buildTransactionText(
-                '${pt.balance.toStringAsFixed(2)}/-',
+              child: _DataCell(
+                '${pt.balance.toStringAsFixed(0)}/-',
                 color: pt.balance >= 0 ? Colors.green : Colors.red,
               ),
             ),
@@ -486,92 +549,66 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     );
   }
 
-  Widget _buildTransactionText(String text, {Color? color}) {
-    return Text(
-      text,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        color: color ?? _textColor,
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
+  Widget _buildFooter(double totalCredit, double totalDebit, double finalBalance,
+      Map<String, AccountTotal> accountTotals) {
+    return Container(
+      margin: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+        ],
       ),
-    );
-  }
-
-  Widget _buildFooter(double totalCredit, double totalDebit, double finalBalance, Map<String, AccountTotal> accountTotals) {
-    return Visibility(
-      visible: _showSummary,
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: BoxDecoration(
-          color: _surfaceColor,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
+      child: Column(
+        children: [
+          if (accountTotals.isNotEmpty) ...[
+            ...accountTotals.entries.map((entry) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      entry.key,
+                      style: TextStyle(
+                          color: _textColor, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${entry.value.credit.toStringAsFixed(0)}/-',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.green, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${entry.value.debit.toStringAsFixed(0)}/-',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.red, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+            const Divider(),
           ],
-        ),
-        child: Column(
-          children: [
-            if (accountTotals.isNotEmpty) ...[
-              ...accountTotals.entries.map((entry) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        entry.key,
-                        style: TextStyle(
-                          color: _textColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${entry.value.credit.toStringAsFixed(2)}/-',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${entry.value.debit.toStringAsFixed(2)}/-',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.red,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              )).toList(),
-              const Divider(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildFooterColumn('Total Credit', totalCredit, Colors.green),
+              _buildFooterColumn('Total Debit', totalDebit, Colors.red),
+              _buildFooterColumn('Final Balance', finalBalance,
+                  finalBalance >= 0 ? Colors.green : Colors.red),
             ],
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildFooterColumn('Total Credit', totalCredit, Colors.green),
-                _buildFooterColumn('Total Debit', totalDebit, Colors.red),
-                _buildFooterColumn('Final Balance', finalBalance,
-                    finalBalance >= 0 ? Colors.green : Colors.red),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -580,21 +617,11 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: _textColor.withOpacity(0.6),
-            fontSize: 12,
-          ),
-        ),
+        Text(label, style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
         const SizedBox(height: 4),
         Text(
-          '${value.toStringAsFixed(2)}/-',
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
+          '${value.toStringAsFixed(0)}/-',
+          style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
         ),
       ],
     );
@@ -603,29 +630,54 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   String _formatDate(String? dateString) {
     if (dateString == null) return 'N/A';
     try {
-      final date = DateFormat('yyyy-MM-dd').parse(dateString);
-      return DateFormat('MMM dd, yyyy').format(date);
+      final date = DateFormat('dd-MM-yyyy').parse(dateString);
+      return DateFormat('dd-MM-yyyy').format(date);
     } catch (e) {
-      return 'Invalid Date';
+      print('Error formatting date: $e');
+      return dateString;
     }
   }
 }
 
-class _HeaderText extends StatelessWidget {
+class _HeaderCell extends StatelessWidget {
   final String text;
 
-  const _HeaderText(this.text);
+  const _HeaderCell(this.text);
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.bold,
-        fontSize: 14,
+    return Center(
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        overflow: TextOverflow.ellipsis,
       ),
-      textAlign: TextAlign.center,
+    );
+  }
+}
+
+class _DataCell extends StatelessWidget {
+  final dynamic text;
+  final Color? color;
+
+  const _DataCell(this.text, {this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    // Access isDarkMode directly from the widget's state
+    final isDarkMode = (context.findAncestorWidgetOfExactType<CompanyLedgerPage>())!.isDarkMode;
+    return Center(
+      child: text is Widget
+          ? text
+          : Text(
+        text.toString(),
+        style: TextStyle(
+          color: color ?? (isDarkMode ? Colors.white : const Color(0xFF2D2D2D)),
+          fontSize: 14,
+        ),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+      ),
     );
   }
 }
