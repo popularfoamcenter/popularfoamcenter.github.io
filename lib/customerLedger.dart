@@ -10,10 +10,11 @@ class ProcessedTransaction {
   final String type;
   final double creditAmount;
   final double debitAmount;
+  final double paidAmount; // New field for paid amount
   final double balance;
   final DateTime date;
 
-  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount, this.balance, this.date);
+  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount, this.paidAmount, this.balance, this.date);
 }
 
 class AccountTotal {
@@ -27,10 +28,11 @@ class ProcessedData {
   final List<ProcessedTransaction> transactions;
   final double totalCredit;
   final double totalDebit;
+  final double totalPaid; // New field for total paid
   final double finalBalance;
   final Map<String, AccountTotal> accountTotals;
 
-  ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.finalBalance, this.accountTotals);
+  ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.totalPaid, this.finalBalance, this.accountTotals);
 }
 
 class CustomerLedgerPage extends StatefulWidget {
@@ -140,6 +142,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
   Future<ProcessedData> _processTransactions(List<DocumentSnapshot> transactions) async {
     double totalCredit = 0.0;
     double totalDebit = 0.0;
+    double totalPaid = 0.0;
     double currentBalance = (_selectedCustomerData?['balanceAmount'] ?? 0.0).toDouble();
     Map<String, AccountTotal> accountTotals = {};
     List<ProcessedTransaction> processed = [];
@@ -156,6 +159,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     for (var doc in transactions) {
       final isInvoice = doc.reference.parent.id == 'invoices';
       final amount = (isInvoice ? doc['total'] : doc['amount'])?.toDouble() ?? 0.0;
+      final paid = (isInvoice ? doc['givenAmount'] : 0.0)?.toDouble() ?? 0.0; // From Invoice class
       final date = _getDate(doc);
 
       if (date == null) {
@@ -167,27 +171,38 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
       String type;
       String accountName;
+      double credit = 0.0;
+      double debit = 0.0;
 
       if (isInvoice) {
         final transactionType = doc['type'] ?? 'Sale';
         switch (transactionType) {
           case 'Sale':
           case 'Order Booking':
-            type = 'Debit'; // Customer owes money
+            type = 'Debit';
+            debit = amount;
             totalDebit += amount;
-            currentBalance += amount; // Increases balance due (debit)
             break;
           case 'Return':
-            type = 'Credit'; // Customer gets money back
+            type = 'Credit';
+            credit = amount;
             totalCredit += amount;
-            currentBalance -= amount; // Decreases balance due (credit)
             break;
           default:
-            type = 'Debit'; // Default to Debit if type is unknown
+            type = 'Debit';
+            debit = amount;
             totalDebit += amount;
-            currentBalance += amount;
+        }
+        // Add paid amount as credit
+        if (paid > 0) {
+          credit += paid;
+          totalPaid += paid;
+          totalCredit += paid;
         }
         accountName = 'Invoices - $transactionType';
+
+        // Update balance: debit increases it, credit and paid decreases it
+        currentBalance = currentBalance + debit - credit;
       } else {
         // Cash Registers (Customer entity_type)
         final accountId = doc['account_id'];
@@ -196,38 +211,38 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
         type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
 
         if (type == 'Credit') {
+          credit = amount;
           totalCredit += amount;
-          currentBalance += amount; // Cash credit (e.g., payment received)
+          currentBalance -= amount;
         } else {
+          debit = amount;
           totalDebit += amount;
-          currentBalance -= amount; // Cash debit (e.g., refund or expense)
+          currentBalance += amount;
         }
       }
 
       accountTotals.update(
         accountName,
             (value) => AccountTotal(
-          value.credit + (type == 'Credit' ? amount : 0),
-          value.debit + (type == 'Debit' ? amount : 0),
+          value.credit + credit,
+          value.debit + debit,
         ),
-        ifAbsent: () => AccountTotal(
-          type == 'Credit' ? amount : 0,
-          type == 'Debit' ? amount : 0,
-        ),
+        ifAbsent: () => AccountTotal(credit, debit),
       );
 
       processed.add(ProcessedTransaction(
         doc,
         type,
-        type == 'Credit' ? amount : 0.0,
-        type == 'Debit' ? amount : 0.0,
+        credit,
+        debit,
+        paid,
         currentBalance,
         date,
       ));
     }
 
-    print('Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit');
-    return ProcessedData(processed, totalCredit, totalDebit, currentBalance, accountTotals);
+    print('Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit, Total Paid: $totalPaid');
+    return ProcessedData(processed, totalCredit, totalDebit, totalPaid, currentBalance, accountTotals);
   }
 
   DateTime? _getDate(DocumentSnapshot doc) {
@@ -293,6 +308,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                     child: _buildFooter(
                       data.totalCredit,
                       data.totalDebit,
+                      data.totalPaid,
                       data.finalBalance,
                       data.accountTotals,
                     ),
@@ -447,32 +463,32 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     }
 
     return Container(
-      margin: const EdgeInsets.all(8), // Reduced margin for less height
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), // Reduced padding
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
         color: _surfaceColor,
-        borderRadius: BorderRadius.circular(8), // Slightly smaller radius
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
-            blurRadius: 4, // Reduced blur radius for compactness
-            offset: const Offset(0, 2), // Reduced offset
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min, // Minimize vertical height
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             'Customer Details',
             style: GoogleFonts.roboto(
               color: _primaryColor,
-              fontSize: 14, // Reduced font size
+              fontSize: 14,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 4), // Reduced spacing
+          const SizedBox(height: 4),
           _buildDetailRow('Name', _selectedCustomerData!['name'] ?? 'N/A'),
           _buildDetailRow('Number', _selectedCustomerData!['number'] ?? 'N/A'),
           _buildDetailRow(
@@ -486,17 +502,17 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
   Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2), // Reduced vertical padding
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
           SizedBox(
-            width: 100, // Reduced width for compactness
+            width: 100,
             child: Text(
               label,
               style: TextStyle(
                 fontWeight: FontWeight.w500,
                 color: _secondaryTextColor,
-                fontSize: 12, // Reduced font size
+                fontSize: 12,
               ),
             ),
           ),
@@ -505,7 +521,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
               value,
               style: TextStyle(
                 color: _textColor,
-                fontSize: 12, // Reduced font size
+                fontSize: 12,
               ),
             ),
           ),
@@ -535,8 +551,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
           children: [
             Expanded(child: _HeaderCell('Date')),
             Expanded(child: _HeaderCell('Details')),
-            Expanded(child: _HeaderCell('Credit')),
-            Expanded(child: _HeaderCell('Debit')),
+            Expanded(child: _HeaderCell('Debit')), // Debit first
+            Expanded(child: _HeaderCell('Credit')), // Credit second
             Expanded(child: _HeaderCell('Balance')),
           ],
         ),
@@ -571,21 +587,21 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                 onTap: () => _navigateToViewInvoice(pt.doc),
                 child: _DataCell(
                   '${pt.doc['type']} - Invoice #${pt.doc['invoiceNumber'] ?? 'N/A'}',
-                  color: _primaryColor, // Highlight clickable text
+                  color: _primaryColor,
                 ),
               )
                   : _DataCell('Cash Transaction - ${pt.doc['description'] ?? 'N/A'}'),
             ),
             Expanded(
               child: _DataCell(
-                pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
-                color: pt.creditAmount > 0 ? Colors.green : _secondaryTextColor,
+                pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
+                color: pt.debitAmount > 0 ? Colors.red : _secondaryTextColor,
               ),
             ),
             Expanded(
               child: _DataCell(
-                pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
-                color: pt.debitAmount > 0 ? Colors.red : _secondaryTextColor,
+                pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
+                color: pt.creditAmount > 0 ? Colors.green : _secondaryTextColor,
               ),
             ),
             Expanded(
@@ -602,7 +618,6 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
   Future<void> _navigateToViewInvoice(DocumentSnapshot invoiceDoc) async {
     try {
-      // Fetch the full invoice document to pass to PointOfSalePage
       final invoiceId = invoiceDoc.id;
       final invoiceSnapshot = await _invoices.doc(invoiceId).get();
       if (!invoiceSnapshot.exists) {
@@ -610,14 +625,12 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
         return;
       }
 
-      // Create an Invoice object using the structure from PointOfSalePage
       final invoiceData = invoiceSnapshot.data() as Map<String, dynamic>;
       final invoice = Invoice.fromMap(
         invoiceId,
         invoiceData,
       );
 
-      // Navigate to PointOfSalePage in read-only mode
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -630,7 +643,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     }
   }
 
-  Widget _buildFooter(double totalCredit, double totalDebit, double finalBalance, Map<String, AccountTotal> accountTotals) {
+  Widget _buildFooter(double totalCredit, double totalDebit, double totalPaid, double finalBalance, Map<String, AccountTotal> accountTotals) {
     return Container(
       margin: const EdgeInsets.all(24),
       padding: const EdgeInsets.all(24),
@@ -666,10 +679,10 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                   ),
                   Expanded(
                     child: Text(
-                      '${entry.value.credit.toStringAsFixed(0)}/-',
+                      '${entry.value.debit.toStringAsFixed(0)}/-',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.green,
+                        color: Colors.red,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -677,10 +690,10 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                   ),
                   Expanded(
                     child: Text(
-                      '${entry.value.debit.toStringAsFixed(0)}/-',
+                      '${entry.value.credit.toStringAsFixed(0)}/-',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        color: Colors.red,
+                        color: Colors.green,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -694,8 +707,9 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildFooterColumn('Total Credit', totalCredit, Colors.green),
               _buildFooterColumn('Total Debit', totalDebit, Colors.red),
+              _buildFooterColumn('Total Credit', totalCredit, Colors.green),
+              _buildFooterColumn('Total Paid', totalPaid, Colors.blue),
               _buildFooterColumn('Final Balance', finalBalance, finalBalance >= 0 ? Colors.green : Colors.red),
             ],
           ),
