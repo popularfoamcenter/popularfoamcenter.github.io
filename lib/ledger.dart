@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
+
+// Import InvoiceViewScreen from the purchase invoice file
+// Adjust the path based on your project structure
+import 'purchaseinvoice.dart'; // Example path, update accordingly
 
 class ProcessedTransaction {
   final DocumentSnapshot doc;
@@ -64,7 +69,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   DateTime? _fromDate;
   DateTime? _toDate;
 
-  // Adjusted Color Scheme
+  // Color Scheme matching the purchase invoice code
   Color get _primaryColor => const Color(0xFF0D6EFD);
   Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
   Color get _secondaryTextColor => widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
@@ -253,13 +258,28 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     );
   }
 
+  // Method to navigate to InvoiceViewScreen
+  void _viewInvoice(DocumentSnapshot invoiceDoc) {
+    final invoice = invoiceDoc.data() as Map<String, dynamic>;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => InvoiceViewScreen.fromData(
+          company: invoice['company'] ?? 'Unknown Company',
+          invoiceId: invoiceDoc.id,
+          existingInvoice: invoice,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            Text('Company Ledger', style: TextStyle(color: _textColor)), // Removed const
+            Text('Company Ledger', style: TextStyle(color: _textColor)),
             const SizedBox(width: 16),
             Expanded(child: _buildCompanyDropdown()),
             const SizedBox(width: 16),
@@ -289,7 +309,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         children: [
           if (_selectedCompanyId != null) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: _buildOpeningBalanceCard(),
             ),
             Expanded(
@@ -429,42 +449,77 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   }
 
   Widget _buildOpeningBalanceCard() {
+    if (_selectedCompanyId == null || _selectedCompanyName == null) {
+      return Center(
+        child: Text(
+          'Please select a company',
+          style: TextStyle(color: _textColor),
+        ),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
         color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _buildBalanceInfo('Balance Limit', '${_balanceLimit.toStringAsFixed(0)}/-'),
-          _buildBalanceInfo('Account Type', _openingType!),
-          _buildBalanceInfo('Opening Date', _formatDate(_openingDate)),
+          Text(
+            'Company Details',
+            style: GoogleFonts.roboto(
+              color: _primaryColor,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          _buildDetailRow('Balance Limit', '${_balanceLimit.toStringAsFixed(0)}/-'),
+          _buildDetailRow('Account Type', _openingType ?? 'N/A'),
+          _buildDetailRow('Opening Date', _formatDate(_openingDate)),
         ],
       ),
     );
   }
 
-  Widget _buildBalanceInfo(String label, String value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-              color: _secondaryTextColor, fontSize: 14, fontWeight: FontWeight.w500),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.bold),
-        ),
-      ],
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: _secondaryTextColor,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: _textColor,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -517,7 +572,13 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
             Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(pt.date))),
             Expanded(
               child: isPurchase
-                  ? _DataCell('Invoice ${pt.doc['invoiceId'] ?? 'N/A'}')
+                  ? GestureDetector(
+                onTap: () => _viewInvoice(pt.doc),
+                child: _DataCell(
+                  'Invoice ${pt.doc['invoiceId'] ?? 'N/A'}',
+                  color: _primaryColor, // Make it look clickable
+                ),
+              )
                   : FutureBuilder<DocumentSnapshot>(
                 future: _accounts.doc(pt.doc['account_id']).get(),
                 builder: (context, snapshot) {
@@ -664,7 +725,6 @@ class _DataCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Access isDarkMode directly from the widget's state
     final isDarkMode = (context.findAncestorWidgetOfExactType<CompanyLedgerPage>())!.isDarkMode;
     return Center(
       child: text is Widget
