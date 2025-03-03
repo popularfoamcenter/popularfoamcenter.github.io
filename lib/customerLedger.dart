@@ -3,18 +3,19 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
-import 'pointofsale.dart'; // Import PointOfSalePage from the provided code
+import 'pointofsale.dart'; // Assuming this contains Invoice class and PointOfSalePage
 
 class ProcessedTransaction {
   final DocumentSnapshot doc;
   final String type;
   final double creditAmount;
   final double debitAmount;
-  final double paidAmount; // New field for paid amount
+  final double paidAmount; // Retained from original
   final double balance;
   final DateTime date;
 
-  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount, this.paidAmount, this.balance, this.date);
+  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount,
+      this.paidAmount, this.balance, this.date);
 }
 
 class AccountTotal {
@@ -28,11 +29,12 @@ class ProcessedData {
   final List<ProcessedTransaction> transactions;
   final double totalCredit;
   final double totalDebit;
-  final double totalPaid; // New field for total paid
+  final double totalPaid;
   final double finalBalance;
   final Map<String, AccountTotal> accountTotals;
 
-  ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.totalPaid, this.finalBalance, this.accountTotals);
+  ProcessedData(this.transactions, this.totalCredit, this.totalDebit,
+      this.totalPaid, this.finalBalance, this.accountTotals);
 }
 
 class CustomerLedgerPage extends StatefulWidget {
@@ -51,9 +53,14 @@ class CustomerLedgerPage extends StatefulWidget {
 
 class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final CollectionReference _customers = FirebaseFirestore.instance.collection('customers');
-  final CollectionReference _invoices = FirebaseFirestore.instance.collection('invoices');
-  final CollectionReference _cashRegisters = FirebaseFirestore.instance.collection('cash_registers');
+  final CollectionReference _customers =
+  FirebaseFirestore.instance.collection('customers');
+  final CollectionReference _invoices =
+  FirebaseFirestore.instance.collection('invoices');
+  final CollectionReference _cashRegisters =
+  FirebaseFirestore.instance.collection('cash_registers');
+  final CollectionReference _accounts =
+  FirebaseFirestore.instance.collection('accounts');
 
   String? _selectedCustomerId;
   Map<String, dynamic>? _selectedCustomerData;
@@ -63,12 +70,14 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
   DateTime? _fromDate;
   DateTime? _toDate;
 
-  // Adjusted Color Scheme
   Color get _primaryColor => const Color(0xFF0D6EFD);
   Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
-  Color get _secondaryTextColor => widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
-  Color get _backgroundColor => widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
-  Color get _surfaceColor => widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
+  Color get _secondaryTextColor =>
+      widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
+  Color get _backgroundColor =>
+      widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+  Color get _surfaceColor =>
+      widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
 
   @override
   void initState() {
@@ -119,31 +128,50 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     }
 
     print('Fetching transactions for customer ID: $_selectedCustomerId');
-    return CombineLatestStream.combine2(
-      _invoices.where('customer.id', isEqualTo: _selectedCustomerId).snapshots(),
-      _cashRegisters.where('entity_id', isEqualTo: _selectedCustomerId).where('entity_type', isEqualTo: 'Customer').snapshots(),
-          (QuerySnapshot invoices, QuerySnapshot cash) {
-        print('Invoices fetched: ${invoices.docs.length}');
-        for (var doc in invoices.docs) {
-          print('Invoice: ${doc.id}, Data: ${doc.data()}');
-        }
-        print('Cash Registers fetched: ${cash.docs.length}');
-        for (var doc in cash.docs) {
-          print('Cash Register: ${doc.id}, Data: ${doc.data()}');
-        }
-        List<DocumentSnapshot> transactions = [];
-        transactions.addAll(invoices.docs);
-        transactions.addAll(cash.docs);
+    final invoiceStream = _invoices
+        .where('customer.id', isEqualTo: _selectedCustomerId)
+        .snapshots()
+        .map((snapshot) {
+      print('Invoices fetched: ${snapshot.docs.length}');
+      for (var doc in snapshot.docs) {
+        print('Invoice: ${doc.id}, Data: ${doc.data()}');
+      }
+      return snapshot.docs;
+    });
+
+    final cashStream = _cashRegisters
+        .where('entity_id', isEqualTo: _selectedCustomerId)
+        .where('entity_type', isEqualTo: 'Customer')
+        .snapshots()
+        .map((snapshot) {
+      print('Cash Registers fetched: ${snapshot.docs.length}');
+      for (var doc in snapshot.docs) {
+        print('Cash Register: ${doc.id}, Data: ${doc.data()}');
+      }
+      return snapshot.docs;
+    });
+
+    return Rx.combineLatest2(
+      invoiceStream,
+      cashStream,
+          (List<DocumentSnapshot> invoices, List<DocumentSnapshot> cash) {
+        final transactions = [...invoices, ...cash];
+        print('Combined transactions: ${transactions.length}');
         return transactions;
       },
-    );
+    ).onErrorReturnWith((error, stackTrace) {
+      print('Error in stream: $error');
+      return [];
+    });
   }
 
-  Future<ProcessedData> _processTransactions(List<DocumentSnapshot> transactions) async {
+  Future<ProcessedData> _processTransactions(
+      List<DocumentSnapshot> transactions) async {
     double totalCredit = 0.0;
     double totalDebit = 0.0;
     double totalPaid = 0.0;
-    double currentBalance = (_selectedCustomerData?['balanceAmount'] ?? 0.0).toDouble();
+    double currentBalance =
+    (_selectedCustomerData?['balanceAmount'] ?? 0.0).toDouble();
     Map<String, AccountTotal> accountTotals = {};
     List<ProcessedTransaction> processed = [];
 
@@ -159,11 +187,11 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     for (var doc in transactions) {
       final isInvoice = doc.reference.parent.id == 'invoices';
       final amount = (isInvoice ? doc['total'] : doc['amount'])?.toDouble() ?? 0.0;
-      final paid = (isInvoice ? doc['givenAmount'] : 0.0)?.toDouble() ?? 0.0; // From Invoice class
+      final paid = (isInvoice ? doc['givenAmount'] : 0.0)?.toDouble() ?? 0.0;
       final date = _getDate(doc);
 
       if (date == null) {
-        print('Skipping transaction ${doc.id} due to invalid date.');
+        print('Skipping transaction ${doc.id} due to invalid date: ${doc['date'] ?? doc['created_at']}');
         continue;
       }
       if (_fromDate != null && date.isBefore(_fromDate!)) continue;
@@ -193,22 +221,30 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
             debit = amount;
             totalDebit += amount;
         }
-        // Add paid amount as credit
         if (paid > 0) {
           credit += paid;
           totalPaid += paid;
           totalCredit += paid;
         }
         accountName = 'Invoices - $transactionType';
-
-        // Update balance: debit increases it, credit and paid decreases it
         currentBalance = currentBalance + debit - credit;
+        print('Processed Invoice ${doc.id}: Type: $type, Amount: $amount, Paid: $paid, Balance: $currentBalance');
       } else {
-        // Cash Registers (Customer entity_type)
         final accountId = doc['account_id'];
-        final account = await _firestore.collection('accounts').doc(accountId).get();
-        accountName = account['name'] ?? 'Unknown Account';
-        type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
+        if (accountId == null) {
+          print('Cash Register ${doc.id} has no account_id, skipping.');
+          continue;
+        }
+        final accountSnapshot = await _accounts.doc(accountId).get();
+        if (!accountSnapshot.exists) {
+          print('Account $accountId for Cash Register ${doc.id} not found.');
+          accountName = 'Unknown Account';
+          type = 'Debit'; // Default to Debit if account type is missing
+        } else {
+          final account = accountSnapshot.data() as Map<String, dynamic>;
+          accountName = account['name'] ?? 'Unknown Account';
+          type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
+        }
 
         if (type == 'Credit') {
           credit = amount;
@@ -219,6 +255,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
           totalDebit += amount;
           currentBalance += amount;
         }
+        print('Processed Cash Transaction ${doc.id}: Type: $type, Amount: $amount, Balance: $currentBalance');
       }
 
       accountTotals.update(
@@ -241,18 +278,34 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
       ));
     }
 
-    print('Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit, Total Paid: $totalPaid');
-    return ProcessedData(processed, totalCredit, totalDebit, totalPaid, currentBalance, accountTotals);
+    print(
+        'Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit, Total Paid: $totalPaid');
+    return ProcessedData(
+        processed, totalCredit, totalDebit, totalPaid, currentBalance, accountTotals);
   }
 
   DateTime? _getDate(DocumentSnapshot doc) {
     try {
-      final timestamp = doc['timestamp'];
-      if (timestamp is Timestamp) {
-        return timestamp.toDate();
-      } else if (timestamp is String) {
-        return DateFormat('dd-MM-yyyy').parse(timestamp);
+      if (doc.reference.parent.id == 'invoices') {
+        final timestamp = doc['timestamp'];
+        if (timestamp is Timestamp) {
+          return timestamp.toDate();
+        } else if (timestamp is String) {
+          print('Parsing invoice timestamp string for ${doc.id}: $timestamp');
+          return DateFormat('dd-MM-yyyy').parse(timestamp);
+        }
+        print('Invalid invoice timestamp for ${doc.id}: $timestamp');
+        return null;
       }
+      // For cash registers, use 'date' or 'created_at' as fallback
+      final dateField = doc['date'] ?? doc['created_at'];
+      if (dateField is Timestamp) {
+        return dateField.toDate();
+      } else if (dateField is String) {
+        print('Parsing cash register date string for ${doc.id}: $dateField');
+        return DateFormat('dd-MM-yyyy').parse(dateField);
+      }
+      print('Invalid cash register date for ${doc.id}: $dateField');
       return null;
     } catch (e) {
       print('Error parsing date for ${doc.id}: $e');
@@ -347,10 +400,10 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
           children: [
             Text(
               _errorMessage!,
-              style: TextStyle(color: Colors.red, fontSize: 14),
+              style: const TextStyle(color: Colors.red, fontSize: 14),
             ),
             TextButton(
-              onPressed: _loadCustomers, // Retry loading
+              onPressed: _loadCustomers,
               child: Text(
                 'Retry',
                 style: TextStyle(color: _primaryColor, fontSize: 14),
@@ -371,7 +424,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
               style: TextStyle(color: _textColor, fontSize: 14),
             ),
             TextButton(
-              onPressed: _loadCustomers, // Retry loading
+              onPressed: _loadCustomers,
               child: Text(
                 'Retry',
                 style: TextStyle(color: _primaryColor, fontSize: 14),
@@ -402,7 +455,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
           isExpanded: true,
           dropdownColor: _surfaceColor,
           value: _selectedCustomerId,
-          hint: Text('Select Customer', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
+          hint:
+          Text('Select Customer', style: TextStyle(color: _secondaryTextColor)),
           icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
           items: _customersList.map((customer) {
             return DropdownMenuItem<String>(
@@ -551,8 +605,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
           children: [
             Expanded(child: _HeaderCell('Date')),
             Expanded(child: _HeaderCell('Details')),
-            Expanded(child: _HeaderCell('Debit')), // Debit first
-            Expanded(child: _HeaderCell('Credit')), // Credit second
+            Expanded(child: _HeaderCell('Debit')),
+            Expanded(child: _HeaderCell('Credit')),
             Expanded(child: _HeaderCell('Balance')),
           ],
         ),
@@ -563,6 +617,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
   Widget _buildTransactionRow(ProcessedTransaction pt) {
     final isInvoice = pt.doc.reference.parent.id == 'invoices';
 
+    print('Rendering row for ${pt.doc.id}: Invoice? $isInvoice, Debit: ${pt.debitAmount}, Credit: ${pt.creditAmount}');
     return Container(
       height: 56,
       decoration: BoxDecoration(
@@ -590,7 +645,13 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                   color: _primaryColor,
                 ),
               )
-                  : _DataCell('Cash Transaction - ${pt.doc['description'] ?? 'N/A'}'),
+                  : FutureBuilder<DocumentSnapshot>(
+                future: _accounts.doc(pt.doc['account_id']).get(),
+                builder: (context, snapshot) {
+                  return _DataCell(
+                      snapshot.data?['name'] ?? 'Unknown Account');
+                },
+              ),
             ),
             Expanded(
               child: _DataCell(
@@ -643,7 +704,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     }
   }
 
-  Widget _buildFooter(double totalCredit, double totalDebit, double totalPaid, double finalBalance, Map<String, AccountTotal> accountTotals) {
+  Widget _buildFooter(double totalCredit, double totalDebit, double totalPaid,
+      double finalBalance, Map<String, AccountTotal> accountTotals) {
     return Container(
       margin: const EdgeInsets.all(24),
       padding: const EdgeInsets.all(24),
@@ -681,7 +743,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                     child: Text(
                       '${entry.value.debit.toStringAsFixed(0)}/-',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.red,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -692,7 +754,7 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                     child: Text(
                       '${entry.value.credit.toStringAsFixed(0)}/-',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.green,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -710,7 +772,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
               _buildFooterColumn('Total Debit', totalDebit, Colors.red),
               _buildFooterColumn('Total Credit', totalCredit, Colors.green),
               _buildFooterColumn('Total Paid', totalPaid, Colors.blue),
-              _buildFooterColumn('Final Balance', finalBalance, finalBalance >= 0 ? Colors.green : Colors.red),
+              _buildFooterColumn('Final Balance', finalBalance,
+                  finalBalance >= 0 ? Colors.green : Colors.red),
             ],
           ),
         ],
@@ -726,7 +789,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
         const SizedBox(height: 4),
         Text(
           '${value.toStringAsFixed(0)}/-',
-          style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
+          style: TextStyle(
+              color: color, fontWeight: FontWeight.bold, fontSize: 14),
         ),
       ],
     );
@@ -791,7 +855,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
                     return Center(
-                      child: Text('No transactions found', style: TextStyle(color: _textColor)),
+                      child: Text('No transactions found',
+                          style: TextStyle(color: _textColor)),
                     );
                   }
 
@@ -805,7 +870,8 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                       if (asyncSnapshot.hasError) {
                         print('Error in FutureBuilder: ${asyncSnapshot.error}');
                         return Center(
-                          child: Text('Error loading transactions', style: TextStyle(color: _textColor)),
+                          child: Text('Error loading transactions',
+                              style: TextStyle(color: _textColor)),
                         );
                       }
 
@@ -818,8 +884,10 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
                             child: ListView.separated(
                               padding: const EdgeInsets.symmetric(horizontal: 24),
                               itemCount: data.transactions.length,
-                              separatorBuilder: (context, index) => const SizedBox(height: 8),
-                              itemBuilder: (context, index) => _buildTransactionRow(data.transactions[index]),
+                              separatorBuilder: (context, index) =>
+                              const SizedBox(height: 8),
+                              itemBuilder: (context, index) =>
+                                  _buildTransactionRow(data.transactions[index]),
                             ),
                           ),
                         ],
@@ -846,7 +914,8 @@ class _HeaderCell extends StatelessWidget {
     return Center(
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
         overflow: TextOverflow.ellipsis,
       ),
     );
@@ -861,14 +930,16 @@ class _DataCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = (context.findAncestorWidgetOfExactType<CustomerLedgerPage>()!.isDarkMode);
+    final isDarkMode =
+    (context.findAncestorWidgetOfExactType<CustomerLedgerPage>()!.isDarkMode);
     return Center(
       child: text is Widget
           ? text
           : Text(
         text.toString(),
         style: TextStyle(
-          color: color ?? (isDarkMode ? Colors.white : const Color(0xFF2D2D2D)),
+          color: color ??
+              (isDarkMode ? Colors.white : const Color(0xFF2D2D2D)),
           fontSize: 14,
         ),
         overflow: TextOverflow.ellipsis,
