@@ -211,7 +211,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
         child: Row(
           children: [
             Expanded(child: _HeaderText('ID')),
-            Expanded(child: _HeaderText('Date')),
+            Expanded(child: _HeaderText('Date ↓')), // Indicates newest first sorting
             Expanded(child: _HeaderText('Name')),
             Expanded(child: _HeaderText('Account')),
             Expanded(child: _HeaderText('Amount')),
@@ -224,7 +224,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
 
   Widget _buildCashRegisterList() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _cashRegisters.orderBy('date', descending: true).snapshots(), // Sort by 'date' descending
+      stream: _cashRegisters.orderBy('date', descending: true).snapshots(), // Sorts by newest first
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator(color: _primaryColor));

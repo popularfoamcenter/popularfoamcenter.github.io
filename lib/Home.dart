@@ -6,7 +6,7 @@ import 'package:pfc/Inventory.dart';
 import 'package:pfc/accounts.dart';
 import 'package:pfc/cashregister.dart';
 import 'package:pfc/customers.dart';
-import 'package:pfc/ledger.dart'; // Assuming this contains both CompanyLedgerPage and CustomerLedgerPage
+import 'package:pfc/ledger.dart'; // Assuming this contains CompanyLedgerPage and CustomerLedgerPage
 import 'package:pfc/pointofsale.dart';
 import 'package:pfc/purchaseinvoice.dart';
 import 'package:pfc/qualities.dart';
@@ -15,8 +15,10 @@ import 'package:pfc/transactionspage.dart';
 import 'package:pfc/vehicles.dart';
 import 'package:pfc/company.dart';
 import 'package:pfc/main.dart';
+import 'package:pfc/productledger.dart'; // Ensure this points to ProductLedgerPage
 import 'package:provider/provider.dart';
 import 'customerLedger.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -59,9 +61,11 @@ class _HomePageState extends State<HomePage> {
       {'icon': Icons.account_balance_sharp, 'label': 'Accounts', 'page': const AccountsPage()},
       {'icon': Icons.edit_note_rounded, 'label': 'Company Ledger', 'page': CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.people_alt_outlined, 'label': 'Customer Ledger', 'page': CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
+      {'icon': Icons.book, 'label': 'Product Ledger', 'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)}, // Updated
       {'icon': Icons.attach_money, 'label': 'Cash Register', 'page': const CashRegisterPage()},
       {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2)},
       {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': const InvoiceListScreen()},
+
     ];
     _currentPage = _navigationItems[0]['page'] as Widget; // Default to Dashboard
   }
@@ -115,9 +119,17 @@ class _HomePageState extends State<HomePage> {
             'label': item['label'],
             'page': CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
           };
+        } else if (item['label'] == 'Product Ledger') { // Added Product Ledger
+          return {
+            'icon': item['icon'],
+            'label': item['label'],
+            'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
+          };
         }
         return item;
       }).toList();
+
+      // Update _currentPage based on _selectedButton
       if (_selectedButton == "Dashboard") {
         _currentPage = Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Inventory") {
@@ -128,6 +140,8 @@ class _HomePageState extends State<HomePage> {
         _currentPage = CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Customer Ledger") {
         _currentPage = CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
+      } else if (_selectedButton == "Product Ledger") { // Added Product Ledger
+        _currentPage = ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       }
     });
   }
