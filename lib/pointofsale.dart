@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
 import 'transactionspage.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CartItem {
   final String quality;
@@ -247,7 +248,73 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       return newNumber;
     });
   }
+  Future<void> _sendWhatsAppInvoice(Invoice invoice) async {
+    try {
+      String phoneNumber = _phoneController.text.trim();
+      phoneNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
 
+      // Validate phone number
+      if (phoneNumber.isEmpty) {
+        _showSnackBar('Please enter a phone number', Colors.red);
+        return;
+      }
+
+      // Ensure phone number has country code (+92 for Pakistan)
+      if (!phoneNumber.startsWith('+')) {
+        if (phoneNumber.startsWith('0')) {
+          phoneNumber = '+92${phoneNumber.substring(1)}';
+        } else {
+          phoneNumber = '+92$phoneNumber';
+        }
+      }
+
+      // Additional validation for phone number length (adjust as needed)
+      if (phoneNumber.length < 12 || phoneNumber.length > 13) {
+        _showSnackBar('Invalid phone number format', Colors.red);
+        return;
+      }
+
+      // Generate invoice message
+      final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+      final date = invoice.timestamp is Timestamp
+          ? (invoice.timestamp as Timestamp).toDate()
+          : DateTime.now();
+
+      String message = '''Popular Foam Center
+Invoice #${invoice.invoiceNumber}
+Date: ${DateFormat('dd-MM-yyyy').format(date)}
+Customer: ${invoice.customer['name'] ?? 'Walking Customer'}
+
+Items:
+${invoice.items.map((item) => '${item.quality} ${item.itemName}\nQty: ${item.qty} | Price: ${numberFormat.format(double.parse(item.price))} | Total: ${numberFormat.format(double.parse(item.total))}').join('\n\n')}
+
+Subtotal: ${numberFormat.format(invoice.subtotal)}/-
+Discount: ${numberFormat.format(invoice.globalDiscount)}/-
+Total: ${numberFormat.format(invoice.total)}/-
+Paid: ${numberFormat.format(invoice.givenAmount)}/-
+${invoice.balanceDue > 0 ? 'Balance Due: ${numberFormat.format(invoice.balanceDue)}/-' : 'Change: ${numberFormat.format(invoice.returnAmount)}/-'}
+
+Thank you for your business!
+Contact: 0302-9596046''';
+
+      final encodedMessage = Uri.encodeComponent(message);
+      final whatsappUrl = Uri.parse('https://wa.me/$phoneNumber?text=$encodedMessage');
+
+      if (await canLaunchUrl(whatsappUrl)) {
+        await launchUrl(
+          whatsappUrl,
+          mode: LaunchMode.externalApplication, // Opens in a new browser tab
+        );
+      } else {
+        _showSnackBar(
+          'Unable to open WhatsApp. Please check your browser settings.',
+          Colors.red,
+        );
+      }
+    } catch (e) {
+      _showSnackBar('Failed to send WhatsApp message: $e', Colors.red);
+    }
+  }
   Future<void> _addItemToCart(Map<String, dynamic> inventoryItem) async {
     try {
       final itemName = inventoryItem['itemName']?.toString().trim() ?? '';
@@ -1429,40 +1496,63 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             if (balanceDue > 0)
               _buildPaymentStatusIndicator('Balance Due', balanceDue, Colors.orange, Icons.error_outline),
             const SizedBox(height: 32),
-            Row(
+            Column(
               children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      try {
-                        final invoice = await _processTransaction(viewAfterSave: true);
-                        if (invoice != null) await _printInvoice(invoice);
-                      } catch (e) {
-                        _showSnackBar('Error during print & save: $e', Colors.red);
-                      }
-                    },
-                    style: TextButton.styleFrom(
-                      backgroundColor: _primaryColor,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          try {
+                            final invoice = await _processTransaction(viewAfterSave: true);
+                            if (invoice != null) await _printInvoice(invoice);
+                          } catch (e) {
+                            _showSnackBar('Error during print & save: $e', Colors.red);
+                          }
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.print, color: Colors.white),
+                        label: const Text('Print & Save', style: TextStyle(color: Colors.white)),
+                      ),
                     ),
-                    icon: const Icon(Icons.print, color: Colors.white),
-                    label: const Text('Print & Save', style: TextStyle(color: Colors.white)),
-                  ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          await _processTransaction(viewAfterSave: true);
+                        },
+                        style: TextButton.styleFrom(
+                          backgroundColor: _backgroundColor,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: Icon(Icons.save, color: _primaryColor),
+                        label: Text('Save', style: TextStyle(color: _primaryColor)),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      await _processTransaction(viewAfterSave: true);
-                    },
-                    style: TextButton.styleFrom(
-                      backgroundColor: _backgroundColor,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    icon: Icon(Icons.save, color: _primaryColor),
-                    label: Text('Save', style: TextStyle(color: _primaryColor)),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () async {
+                    final invoice = await _processTransaction();
+                    if (invoice != null) {
+                      await _sendWhatsAppInvoice(invoice);
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366), // WhatsApp green
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.message, color: Colors.white),
+                  label: const Text(
+                    'Send via WhatsApp',
+                    style: TextStyle(color: Colors.white),
                   ),
                 ),
               ],
