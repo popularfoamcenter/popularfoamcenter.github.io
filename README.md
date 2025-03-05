@@ -1,6 +1,6 @@
 # pfc
 
-Inventory management system by Raja Rehman Tanveer
+Inventory management system by Muhammad Usman
 Contact : rajarehman.dev@gmail.com
 
 ## Getting Started
