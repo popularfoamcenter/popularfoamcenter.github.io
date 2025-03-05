@@ -684,7 +684,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final _formKey = GlobalKey<FormState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final List<InvoiceItem> _items = [];
-  Map<String, int> _originalQuantities = {}; // Store original quantities by itemId
+  Map<String, int> _originalQuantities = {};
   double _subtotal = 0.0;
   double _total = 0.0;
   final TextEditingController _invoiceIdController = TextEditingController();
@@ -692,6 +692,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   final TextEditingController _receiveDateController = TextEditingController();
   final TextEditingController _taxController = TextEditingController(text: '0.5');
   final ScrollController _itemsScrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
@@ -703,6 +704,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       _invoiceDateController.text = DateFormat('dd-MM-yyyy').format(today);
       _receiveDateController.text = DateFormat('dd-MM-yyyy').format(today);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
   }
 
   void _initializeExistingInvoice() {
@@ -712,7 +716,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     _receiveDateController.text = invoice['receiveDate'];
     _taxController.text = invoice['taxPercentage'].toString();
 
-    // Initialize items and original quantities
     final List<dynamic> invoiceItems = invoice['items'] as List<dynamic>;
     for (var item in invoiceItems) {
       final invoiceItem = InvoiceItem(
@@ -726,7 +729,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         covered: item['isCovered'] ? "Yes" : "No",
       );
       _items.add(invoiceItem);
-      _originalQuantities[invoiceItem.itemId] = invoiceItem.quantity; // Store original quantity
+      _originalQuantities[invoiceItem.itemId] = invoiceItem.quantity;
     }
 
     _calculateTotal();
@@ -757,7 +760,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         discount: discount,
         covered: item.covered,
       ));
-      // If this is a new item (not in original), set original quantity to 0
       if (!_originalQuantities.containsKey(item.id)) {
         _originalQuantities[item.id] = 0;
       }
@@ -831,7 +833,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       }
     }
 
-    // Handle items that were removed
     for (final originalItemId in _originalQuantities.keys) {
       if (!_items.any((item) => item.itemId == originalItemId)) {
         final originalQty = _originalQuantities[originalItemId] ?? 0;
@@ -856,68 +857,80 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _backgroundColor,
-        title: Text(
-          widget.invoiceId != null ? "Edit Purchase Invoice" : "Add Purchase Invoice",
-          style: TextStyle(color: _textColor),
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (KeyEvent event) {
+        if (event is KeyDownEvent &&
+            HardwareKeyboard.instance.isControlPressed &&
+            event.logicalKey == LogicalKeyboardKey.keyA) {
+          print('Ctrl+A detected in InvoiceScreen');
+          _showAddItemDialog();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: _backgroundColor,
+          title: Text(
+            widget.invoiceId != null ? "Edit Purchase Invoice" : "Add Purchase Invoice",
+            style: TextStyle(color: _textColor),
+          ),
+          elevation: 0,
+          iconTheme: IconThemeData(color: _textColor),
         ),
-        elevation: 0,
-        iconTheme: IconThemeData(color: _textColor),
-      ),
-      backgroundColor: _backgroundColor,
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: Column(
-                children: [
-                  _buildItemsHeader(),
-                  const SizedBox(height: 16),
-                  Container(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.7,
-                    ),
-                    child: ListView.separated(
-                      controller: _itemsScrollController,
-                      itemCount: _items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) => _buildItemRow(_items[index], index),
-                    ),
-                  ),
-                  if (_items.isEmpty)
+        backgroundColor: _backgroundColor,
+        body: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: Column(
+                  children: [
+                    _buildItemsHeader(),
+                    const SizedBox(height: 16),
                     Container(
-                      height: 200,
-                      alignment: Alignment.center,
-                      child: Text(
-                        "No items added",
-                        style: TextStyle(color: _secondaryTextColor, fontSize: 16),
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.7,
+                      ),
+                      child: ListView.separated(
+                        controller: _itemsScrollController,
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) => _buildItemRow(_items[index], index),
                       ),
                     ),
-                ],
+                    if (_items.isEmpty)
+                      Container(
+                        height: 200,
+                        alignment: Alignment.center,
+                        child: Text(
+                          "No items added",
+                          style: TextStyle(color: _secondaryTextColor, fontSize: 16),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 24),
-            Expanded(
-              flex: 1,
-              child: SingleChildScrollView(
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      _buildInputPanel(),
-                      const SizedBox(height: 24),
-                      _buildSummaryCard(),
-                    ],
+              const SizedBox(width: 24),
+              Expanded(
+                flex: 1,
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        _buildInputPanel(),
+                        const SizedBox(height: 24),
+                        _buildSummaryCard(),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1439,6 +1452,17 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   );
 
   int? _selectedItemIndex;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _invoiceIdController.dispose();
+    _invoiceDateController.dispose();
+    _receiveDateController.dispose();
+    _taxController.dispose();
+    _itemsScrollController.dispose();
+    super.dispose();
+  }
 }
 
 // Invoice View Screen (Read-Only)

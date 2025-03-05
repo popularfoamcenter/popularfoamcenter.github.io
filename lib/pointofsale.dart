@@ -8,7 +8,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
 import 'transactionspage.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class CartItem {
   final String quality;
@@ -163,6 +162,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   final TextEditingController _givenAmountController = TextEditingController();
   final TextEditingController _globalDiscountController = TextEditingController();
   final TextEditingController _customCustomerNameController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
 
   late Map<String, dynamic> _selectedCustomer;
   late String _selectedTransactionType;
@@ -182,10 +182,24 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   static const Color _backgroundColor = Color(0xFFF8F9FA);
   static const Color _surfaceColor = Colors.white;
 
+  int? _selectedItemIndex;
+  int _selectedFieldIndex = 0; // 0: qty, 1: price, 2: discount
+  final List<List<FocusNode>> _focusNodes = [];
+
   @override
   void initState() {
     super.initState();
     _initializeState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+    for (var _ in _cartItems) {
+      _focusNodes.add([
+        FocusNode(),
+        FocusNode(),
+        FocusNode(),
+      ]);
+    }
   }
 
   void _initializeState() {
@@ -225,6 +239,12 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
 
   @override
   void dispose() {
+    for (var nodes in _focusNodes) {
+      for (var node in nodes) {
+        node.dispose();
+      }
+    }
+    _focusNode.dispose();
     _phoneController.dispose();
     _searchController.dispose();
     _givenAmountController.dispose();
@@ -248,73 +268,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       return newNumber;
     });
   }
-  Future<void> _sendWhatsAppInvoice(Invoice invoice) async {
-    try {
-      String phoneNumber = _phoneController.text.trim();
-      phoneNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
 
-      // Validate phone number
-      if (phoneNumber.isEmpty) {
-        _showSnackBar('Please enter a phone number', Colors.red);
-        return;
-      }
-
-      // Ensure phone number has country code (+92 for Pakistan)
-      if (!phoneNumber.startsWith('+')) {
-        if (phoneNumber.startsWith('0')) {
-          phoneNumber = '+92${phoneNumber.substring(1)}';
-        } else {
-          phoneNumber = '+92$phoneNumber';
-        }
-      }
-
-      // Additional validation for phone number length (adjust as needed)
-      if (phoneNumber.length < 12 || phoneNumber.length > 13) {
-        _showSnackBar('Invalid phone number format', Colors.red);
-        return;
-      }
-
-      // Generate invoice message
-      final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
-      final date = invoice.timestamp is Timestamp
-          ? (invoice.timestamp as Timestamp).toDate()
-          : DateTime.now();
-
-      String message = '''Popular Foam Center
-Invoice #${invoice.invoiceNumber}
-Date: ${DateFormat('dd-MM-yyyy').format(date)}
-Customer: ${invoice.customer['name'] ?? 'Walking Customer'}
-
-Items:
-${invoice.items.map((item) => '${item.quality} ${item.itemName}\nQty: ${item.qty} | Price: ${numberFormat.format(double.parse(item.price))} | Total: ${numberFormat.format(double.parse(item.total))}').join('\n\n')}
-
-Subtotal: ${numberFormat.format(invoice.subtotal)}/-
-Discount: ${numberFormat.format(invoice.globalDiscount)}/-
-Total: ${numberFormat.format(invoice.total)}/-
-Paid: ${numberFormat.format(invoice.givenAmount)}/-
-${invoice.balanceDue > 0 ? 'Balance Due: ${numberFormat.format(invoice.balanceDue)}/-' : 'Change: ${numberFormat.format(invoice.returnAmount)}/-'}
-
-Thank you for your business!
-Contact: 0302-9596046''';
-
-      final encodedMessage = Uri.encodeComponent(message);
-      final whatsappUrl = Uri.parse('https://wa.me/$phoneNumber?text=$encodedMessage');
-
-      if (await canLaunchUrl(whatsappUrl)) {
-        await launchUrl(
-          whatsappUrl,
-          mode: LaunchMode.externalApplication, // Opens in a new browser tab
-        );
-      } else {
-        _showSnackBar(
-          'Unable to open WhatsApp. Please check your browser settings.',
-          Colors.red,
-        );
-      }
-    } catch (e) {
-      _showSnackBar('Failed to send WhatsApp message: $e', Colors.red);
-    }
-  }
   Future<void> _addItemToCart(Map<String, dynamic> inventoryItem) async {
     try {
       final itemName = inventoryItem['itemName']?.toString().trim() ?? '';
@@ -340,7 +294,19 @@ Contact: 0302-9596046''';
         await _applyCustomerDiscounts(newItem);
       }
 
-      setState(() => _cartItems.add(newItem));
+      setState(() {
+        _cartItems.add(newItem);
+        _focusNodes.add([
+          FocusNode(),
+          FocusNode(),
+          FocusNode(),
+        ]);
+        _selectedItemIndex = _cartItems.length - 1;
+        _selectedFieldIndex = 0;
+        _searchController.clear();
+        _searchQuery = '';
+      });
+      _focusNodes[_selectedItemIndex!][0].requestFocus();
       Navigator.pop(context);
     } catch (e, stack) {
       print('Error adding to cart: $e\n$stack');
@@ -426,7 +392,7 @@ Contact: 0302-9596046''';
   }
 
   Future<bool> _checkStockAvailability() async {
-    if (widget.invoice != null) { // When editing
+    if (widget.invoice != null) {
       for (final item in _cartItems) {
         final snapshot = await _firestore
             .collection('items')
@@ -439,14 +405,13 @@ Contact: 0302-9596046''';
           final stock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
           final qtyChange = item.qty - item.originalQty;
           if (_selectedTransactionType != 'Return' && qtyChange > 0 && stock < qtyChange) {
-            return true; // Insufficient stock for increased quantity
+            return true;
           }
         }
       }
       return false;
     }
 
-    // For new invoices
     for (final item in _cartItems) {
       final snapshot = await _firestore
           .collection('items')
@@ -534,7 +499,6 @@ Contact: 0302-9596046''';
       }
     }
 
-    // Handle removed items
     if (widget.invoice != null) {
       for (final oldItem in widget.invoice!.items) {
         final stillExists = _cartItems.any(
@@ -1041,94 +1005,147 @@ Contact: 0302-9596046''';
     ),
   );
 
-  Widget _buildCartItem(CartItem item, int index) => Container(
-    height: 56,
-    padding: const EdgeInsets.symmetric(horizontal: 12),
-    decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)]),
-    child: Row(
-      children: [
-        Expanded(
-            flex: 2,
-            child: Center(
-                child: Text(item.quality, style: TextStyle(color: _textColor, fontSize: 14)))),
-        Expanded(
-            flex: 2,
-            child: Center(
-                child: Text(item.itemName, style: TextStyle(color: _textColor, fontSize: 14)))),
-        Expanded(
-            flex: 1,
-            child: Center(
-                child: Text(item.covered ?? '-', style: TextStyle(color: _textColor, fontSize: 14)))),
-        Expanded(
-            flex: 1,
-            child: Center(
+  Widget _buildCartItem(CartItem item, int index) {
+    if (_focusNodes.length <= index) {
+      _focusNodes.add([
+        FocusNode(),
+        FocusNode(),
+        FocusNode(),
+      ]);
+    }
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedItemIndex = index;
+          _selectedFieldIndex = 0;
+          _focusNodes[index][0].requestFocus();
+        });
+      },
+      child: Container(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: _surfaceColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+                flex: 2,
+                child: Center(child: Text(item.quality, style: TextStyle(color: _textColor, fontSize: 14)))),
+            Expanded(
+                flex: 2,
+                child: Center(child: Text(item.itemName, style: TextStyle(color: _textColor, fontSize: 14)))),
+            Expanded(
+                flex: 1,
+                child: Center(child: Text(item.covered ?? '-', style: TextStyle(color: _textColor, fontSize: 14)))),
+            Expanded(
+              flex: 1,
+              child: Center(
                 child: widget.isReadOnly
                     ? Text(
                     item.qty % 1 == 0 ? item.qty.toStringAsFixed(0) : item.qty.toStringAsFixed(1),
                     style: TextStyle(color: _textColor, fontSize: 14))
                     : TextFormField(
-                    initialValue: item.qty % 1 == 0
-                        ? item.qty.toStringAsFixed(0)
-                        : item.qty.toStringAsFixed(1),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _textColor, fontSize: 14),
-                    decoration:
-                    const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-                    onChanged: (value) =>
-                        _updateCartItem(index, qty: double.tryParse(value) ?? item.qty)))),
-        Expanded(
-            flex: 1,
-            child: Center(
+                  focusNode: _focusNodes[index][0],
+                  initialValue: item.qty % 1 == 0
+                      ? item.qty.toStringAsFixed(0)
+                      : item.qty.toStringAsFixed(1),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                  onTap: () => setState(() {
+                    _selectedItemIndex = index;
+                    _selectedFieldIndex = 0;
+                  }),
+                  onChanged: (value) => _updateCartItem(index, qty: double.tryParse(value) ?? item.qty),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Center(
                 child: widget.isReadOnly
                     ? Text(item.price, style: TextStyle(color: _textColor, fontSize: 14))
                     : TextFormField(
-                    initialValue: item.price,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _textColor, fontSize: 14),
-                    decoration:
-                    const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) => _updateCartItem(index, price: value)))),
-        Expanded(
-            flex: 1,
-            child: Center(
+                  focusNode: _focusNodes[index][1],
+                  initialValue: item.price,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  keyboardType: TextInputType.number,
+                  onTap: () => setState(() {
+                    _selectedItemIndex = index;
+                    _selectedFieldIndex = 1;
+                  }),
+                  onChanged: (value) => _updateCartItem(index, price: value),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Center(
                 child: widget.isReadOnly
                     ? Text(item.discount, style: TextStyle(color: _textColor, fontSize: 14))
                     : TextFormField(
-                    initialValue: item.discount,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _textColor, fontSize: 14),
-                    decoration:
-                    const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) => _updateCartItem(index, discount: value)))),
-        Expanded(
-            flex: 1,
-            child: Center(
-                child: Text(item.total,
-                    style: TextStyle(
-                        color: _textColor, fontWeight: FontWeight.bold, fontSize: 14)))),
-        Expanded(flex: 1, child: Center(child: _buildStockIndicator(item))),
-        if (!widget.isReadOnly)
-          SizedBox(
-            width: 40,
-            child: Center(
-              child: IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _removeItem(index),
+                  focusNode: _focusNodes[index][2],
+                  initialValue: item.discount,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _textColor, fontSize: 14),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  keyboardType: TextInputType.number,
+                  onTap: () => setState(() {
+                    _selectedItemIndex = index;
+                    _selectedFieldIndex = 2;
+                  }),
+                  onChanged: (value) => _updateCartItem(index, discount: value),
+                ),
               ),
             ),
-          ),
-      ],
-    ),
-  );
+            Expanded(
+              flex: 1,
+              child: Center(
+                child: Text(
+                  item.total,
+                  style: TextStyle(
+                    color: _textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(flex: 1, child: Center(child: _buildStockIndicator(item))),
+            if (!widget.isReadOnly)
+              SizedBox(
+                width: 40,
+                child: Center(
+                  child: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _removeItem(index),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildStockIndicator(CartItem item) => StreamBuilder<QuerySnapshot>(
       stream: _firestore
@@ -1153,7 +1170,16 @@ Contact: 0302-9596046''';
       _deletedItem = _cartItems[index];
       _deletedIndex = index;
       _cartItems.removeAt(index);
-      _selectedItemIndex = null;
+      final removedNodes = _focusNodes.removeAt(index);
+      for (var node in removedNodes) {
+        node.dispose();
+      }
+      if (_cartItems.isEmpty) {
+        _selectedItemIndex = null;
+      } else {
+        _selectedItemIndex = _selectedItemIndex!.clamp(0, _cartItems.length - 1);
+        _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
+      }
       _showUndoToast = true;
     });
     Future.delayed(const Duration(seconds: 5), () => setState(() => _showUndoToast = false));
@@ -1182,6 +1208,13 @@ Contact: 0302-9596046''';
       HapticFeedback.heavyImpact();
       setState(() {
         _cartItems.insert(_deletedIndex!, _deletedItem!);
+        _focusNodes.insert(_deletedIndex!, [
+          FocusNode(),
+          FocusNode(),
+          FocusNode(),
+        ]);
+        _selectedItemIndex = _deletedIndex;
+        _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
         _showUndoToast = false;
         _deletedItem = null;
         _deletedIndex = null;
@@ -1496,63 +1529,40 @@ Contact: 0302-9596046''';
             if (balanceDue > 0)
               _buildPaymentStatusIndicator('Balance Due', balanceDue, Colors.orange, Icons.error_outline),
             const SizedBox(height: 32),
-            Column(
+            Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: () async {
-                          try {
-                            final invoice = await _processTransaction(viewAfterSave: true);
-                            if (invoice != null) await _printInvoice(invoice);
-                          } catch (e) {
-                            _showSnackBar('Error during print & save: $e', Colors.red);
-                          }
-                        },
-                        style: TextButton.styleFrom(
-                          backgroundColor: _primaryColor,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        icon: const Icon(Icons.print, color: Colors.white),
-                        label: const Text('Print & Save', style: TextStyle(color: Colors.white)),
-                      ),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      try {
+                        final invoice = await _processTransaction(viewAfterSave: true);
+                        if (invoice != null) await _printInvoice(invoice);
+                      } catch (e) {
+                        _showSnackBar('Error during print & save: $e', Colors.red);
+                      }
+                    },
+                    style: TextButton.styleFrom(
+                      backgroundColor: _primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: () async {
-                          await _processTransaction(viewAfterSave: true);
-                        },
-                        style: TextButton.styleFrom(
-                          backgroundColor: _backgroundColor,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        icon: Icon(Icons.save, color: _primaryColor),
-                        label: Text('Save', style: TextStyle(color: _primaryColor)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextButton.icon(
-                  onPressed: () async {
-                    final invoice = await _processTransaction();
-                    if (invoice != null) {
-                      await _sendWhatsAppInvoice(invoice);
-                    }
-                  },
-                  style: TextButton.styleFrom(
-                    backgroundColor: const Color(0xFF25D366), // WhatsApp green
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    icon: const Icon(Icons.print, color: Colors.white),
+                    label: const Text('Print & Save', style: TextStyle(color: Colors.white)),
                   ),
-                  icon: const Icon(Icons.message, color: Colors.white),
-                  label: const Text(
-                    'Send via WhatsApp',
-                    style: TextStyle(color: Colors.white),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      await _processTransaction(viewAfterSave: true);
+                    },
+                    style: TextButton.styleFrom(
+                      backgroundColor: _backgroundColor,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: Icon(Icons.save, color: _primaryColor),
+                    label: Text('Save', style: TextStyle(color: _primaryColor)),
                   ),
                 ),
               ],
@@ -1694,76 +1704,114 @@ Contact: 0302-9596046''';
                     style: TextStyle(color: _textColor), textAlign: TextAlign.center))
           ])));
 
-  int? _selectedItemIndex;
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _backgroundColor,
-        title: Text(widget.isReadOnly ? "View Transaction" : "Point Of Sale",
-            style: TextStyle(color: _textColor)),
-        elevation: 0,
-        actions: widget.isReadOnly
-            ? null
-            : [
-          IconButton(
-            icon: Icon(Icons.history, color: _primaryColor),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => TransactionsPage()),
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (KeyEvent event) {
+        if (event is KeyDownEvent && !widget.isReadOnly) {
+          if (HardwareKeyboard.instance.isControlPressed &&
+              event.logicalKey == LogicalKeyboardKey.keyA) {
+            _showAddItemDialog();
+            return;
+          }
+
+          if (_selectedItemIndex != null && _cartItems.isNotEmpty) {
+            if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+              setState(() {
+                _selectedItemIndex = (_selectedItemIndex! - 1).clamp(0, _cartItems.length - 1);
+                _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
+              });
+            }
+            else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+              setState(() {
+                _selectedItemIndex = (_selectedItemIndex! + 1).clamp(0, _cartItems.length - 1);
+                _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
+              });
+            }
+            else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+              setState(() {
+                _selectedFieldIndex = (_selectedFieldIndex - 1).clamp(0, 2);
+                _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
+              });
+            }
+            else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+              setState(() {
+                _selectedFieldIndex = (_selectedFieldIndex + 1).clamp(0, 2);
+                _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
+              });
+            }
+          }
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: _backgroundColor,
+          title: Text(widget.isReadOnly ? "View Transaction" : "Point Of Sale",
+              style: TextStyle(color: _textColor)),
+          elevation: 0,
+          actions: widget.isReadOnly
+              ? null
+              : [
+            IconButton(
+              icon: Icon(Icons.history, color: _primaryColor),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => TransactionsPage()),
+              ),
             ),
-          ),
-        ],
-      ),
-      backgroundColor: _backgroundColor,
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: Column(
-                      children: [
-                        _buildCartHeader(),
-                        const SizedBox(height: 16),
-                        Container(
-                          constraints: BoxConstraints(
-                            maxHeight: MediaQuery.of(context).size.height * 0.7,
-                          ),
-                          child: ListView.separated(
-                            itemCount: _cartItems.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) => _buildCartItem(_cartItems[index], index),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    flex: 1,
-                    child: SingleChildScrollView(
+          ],
+        ),
+        backgroundColor: _backgroundColor,
+        body: Stack(
+          children: [
+            SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
                       child: Column(
                         children: [
-                          _buildCustomerPanel(),
-                          const SizedBox(height: 24),
-                          _buildModernSummaryCard(),
+                          _buildCartHeader(),
+                          const SizedBox(height: 16),
+                          Container(
+                            constraints: BoxConstraints(
+                              maxHeight: MediaQuery.of(context).size.height * 0.7,
+                            ),
+                            child: ListView.separated(
+                              itemCount: _cartItems.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 8),
+                              itemBuilder: (context, index) => _buildCartItem(_cartItems[index], index),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 24),
+                    Expanded(
+                      flex: 1,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            _buildCustomerPanel(),
+                            const SizedBox(height: 24),
+                            _buildModernSummaryCard(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (_showPaymentDialog && !widget.isReadOnly) _buildPaymentDialog(),
-          if (_showUndoToast && !widget.isReadOnly) _buildUndoToast(),
-        ],
+            if (_showPaymentDialog && !widget.isReadOnly) _buildPaymentDialog(),
+            if (_showUndoToast && !widget.isReadOnly) _buildUndoToast(),
+          ],
+        ),
       ),
     );
   }

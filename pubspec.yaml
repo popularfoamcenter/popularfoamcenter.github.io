@@ -51,7 +51,7 @@ dependencies:
   fl_chart:
   provider:
   url_launcher:
-
+  firebase_storage:
 dev_dependencies:
   flutter_test:
     sdk: flutter
