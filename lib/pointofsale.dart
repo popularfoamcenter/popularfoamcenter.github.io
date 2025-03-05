@@ -46,7 +46,11 @@ class CartItem {
     itemName: map['item'] ?? '',
     covered: map['covered'],
     qty: (map['qty'] is num ? map['qty'].toDouble() : double.tryParse(map['qty'].toString())) ?? 0.0,
-    originalQty: (map['originalQty'] is num ? map['originalQty'].toDouble() : double.tryParse(map['originalQty']?.toString() ?? '0')) ?? (map['qty'] is num ? map['qty'].toDouble() : double.tryParse(map['qty'].toString())) ?? 0.0,
+    originalQty: (map['originalQty'] is num
+        ? map['originalQty'].toDouble()
+        : double.tryParse(map['originalQty']?.toString() ?? '0')) ??
+        (map['qty'] is num ? map['qty'].toDouble() : double.tryParse(map['qty'].toString())) ??
+        0.0,
     price: map['price'] ?? '0',
     discount: map['discount'] ?? '0',
     total: map['total'] ?? '0',
@@ -175,6 +179,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   int? _deletedIndex;
   String? _returnInvoiceNumber;
   bool _useCustomName = false;
+  late DateTime _selectedDate; // Added for date selection
 
   static const Color _primaryColor = Color(0xFF0D6EFD);
   static const Color _textColor = Color(0xFF2D2D2D);
@@ -190,6 +195,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   void initState() {
     super.initState();
     _initializeState();
+    _selectedDate = DateTime.now(); // Set today's date as initial value
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -210,7 +216,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         'number': widget.invoice!.customer['number'] ?? '',
       };
       _selectedTransactionType = widget.invoice!.type;
-      _cartItems = widget.invoice!.items.map((item) => CartItem(
+      _cartItems = widget.invoice!.items
+          .map((item) => CartItem(
         quality: item.quality,
         itemName: item.itemName,
         covered: item.covered,
@@ -219,13 +226,17 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         price: item.price,
         discount: item.discount,
         total: item.total,
-      )).toList();
+      ))
+          .toList();
       _globalDiscount = widget.invoice!.globalDiscount;
       _givenAmountController.text = widget.invoice!.givenAmount.toString();
       _globalDiscountController.text = _globalDiscount.toString();
       _phoneController.text = _selectedCustomer['number'] ?? '';
       _customCustomerNameController.text = _selectedCustomer['name'] ?? '';
       _useCustomName = _selectedCustomer['id']?.isEmpty ?? true;
+      _selectedDate = widget.invoice!.timestamp is Timestamp
+          ? (widget.invoice!.timestamp as Timestamp).toDate()
+          : DateTime.now(); // Set date from invoice or today
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
       }
@@ -234,6 +245,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _selectedTransactionType = 'Sale';
       _customCustomerNameController.text = 'Walking Customer';
       _useCustomName = false;
+      _selectedDate = DateTime.now(); // Default to today
     }
   }
 
@@ -485,9 +497,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         if (snapshot.docs.isNotEmpty) {
           final ref = snapshot.docs.first.reference;
           final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-          final stockAdjustment = _selectedTransactionType == 'Return'
-              ? qtyChange
-              : -qtyChange;
+          final stockAdjustment =
+          _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
           final newStock = currentStock + stockAdjustment;
 
           if (newStock < 0) {
@@ -502,8 +513,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     if (widget.invoice != null) {
       for (final oldItem in widget.invoice!.items) {
         final stillExists = _cartItems.any(
-                (item) => item.itemName == oldItem.itemName && item.quality == oldItem.quality
-        );
+                (item) => item.itemName == oldItem.itemName && item.quality == oldItem.quality);
 
         if (!stillExists && oldItem.qty > 0) {
           final snapshot = await _firestore
@@ -516,9 +526,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           if (snapshot.docs.isNotEmpty) {
             final ref = snapshot.docs.first.reference;
             final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-            final stockAdjustment = _selectedTransactionType == 'Return'
-                ? -oldItem.qty
-                : oldItem.qty;
+            final stockAdjustment =
+            _selectedTransactionType == 'Return' ? -oldItem.qty : oldItem.qty;
             transaction.update(ref, {'stockQuantity': currentStock + stockAdjustment});
           }
         }
@@ -542,11 +551,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         content: const Text('Some items have insufficient stock. Proceed?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Proceed')),
+              onPressed: () => Navigator.pop(context, true), child: const Text('Proceed')),
         ],
       ),
     )) ??
@@ -599,7 +606,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: givenAmount,
           returnAmount: math.max(givenAmount - total, 0),
           balanceDue: math.max(total - givenAmount, 0),
-          timestamp: isEditing ? widget.invoice!.timestamp : FieldValue.serverTimestamp(),
+          timestamp: isEditing
+              ? widget.invoice!.timestamp
+              : Timestamp.fromDate(_selectedDate), // Use selected date
         );
 
         if (isEditing) {
@@ -626,7 +635,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: invoice.givenAmount,
           returnAmount: invoice.returnAmount,
           balanceDue: invoice.balanceDue,
-          timestamp: invoice.timestamp,
+          timestamp: Timestamp.fromDate(_selectedDate),
         );
         await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
         finalInvoice = updatedInvoice;
@@ -644,7 +653,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       if (viewAfterSave) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => PointOfSalePage(invoice: finalInvoice, isReadOnly: true)),
+          MaterialPageRoute(
+              builder: (context) => PointOfSalePage(invoice: finalInvoice, isReadOnly: true)),
         );
       }
 
@@ -659,7 +669,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     try {
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
-      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
+      final Uint8List logoImage =
+      (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
       DateTime invoiceDate = invoice.timestamp is Timestamp
           ? (invoice.timestamp as Timestamp).toDate()
           : DateTime.now();
@@ -773,23 +784,28 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                           pw.Container(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Text('${item.quality} ${item.itemName}',
-                                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                                  style: const pw.TextStyle(
+                                      fontSize: 10, color: PdfColors.black))),
                           pw.Container(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Text(item.qty.toStringAsFixed(2),
-                                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                                  style: const pw.TextStyle(
+                                      fontSize: 10, color: PdfColors.black))),
                           pw.Container(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Text(numberFormat.format(int.parse(item.price)),
-                                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                                  style: const pw.TextStyle(
+                                      fontSize: 10, color: PdfColors.black))),
                           pw.Container(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Text('${item.discount}%',
-                                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                                  style: const pw.TextStyle(
+                                      fontSize: 10, color: PdfColors.black))),
                           pw.Container(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Text(numberFormat.format(double.parse(item.total)),
-                                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                                  style: const pw.TextStyle(
+                                      fontSize: 10, color: PdfColors.black))),
                         ],
                       )),
                     ],
@@ -942,8 +958,10 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   }
 
   void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color, duration: const Duration(seconds: 3)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3)));
   }
 
   Widget _buildCartHeader() => Container(
@@ -959,48 +977,57 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             flex: 2,
             child: Center(
                 child: Text('Quality',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 2,
             child: Center(
                 child: Text('Item',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text('Cvrd',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text('Qty',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text('Price',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text('Dis%',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text('Amount',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         Expanded(
             flex: 1,
             child: Center(
                 child: Text('Stock',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
         if (!widget.isReadOnly)
           SizedBox(
               width: 40,
               child: Center(
                   child: Text('Del',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)))),
       ],
     ),
   );
@@ -1034,13 +1061,17 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           children: [
             Expanded(
                 flex: 2,
-                child: Center(child: Text(item.quality, style: TextStyle(color: _textColor, fontSize: 14)))),
+                child: Center(
+                    child: Text(item.quality, style: TextStyle(color: _textColor, fontSize: 14)))),
             Expanded(
                 flex: 2,
-                child: Center(child: Text(item.itemName, style: TextStyle(color: _textColor, fontSize: 14)))),
+                child: Center(
+                    child: Text(item.itemName, style: TextStyle(color: _textColor, fontSize: 14)))),
             Expanded(
                 flex: 1,
-                child: Center(child: Text(item.covered ?? '-', style: TextStyle(color: _textColor, fontSize: 14)))),
+                child: Center(
+                    child:
+                    Text(item.covered ?? '-', style: TextStyle(color: _textColor, fontSize: 14)))),
             Expanded(
               flex: 1,
               child: Center(
@@ -1065,7 +1096,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                     _selectedItemIndex = index;
                     _selectedFieldIndex = 0;
                   }),
-                  onChanged: (value) => _updateCartItem(index, qty: double.tryParse(value) ?? item.qty),
+                  onChanged: (value) =>
+                      _updateCartItem(index, qty: double.tryParse(value) ?? item.qty),
                 ),
               ),
             ),
@@ -1161,7 +1193,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         return Text(
             stock % 1 == 0 ? stock.toStringAsFixed(0) : stock.toStringAsFixed(1),
             style: TextStyle(
-                color: stock < qty ? Colors.red : Colors.green, fontWeight: FontWeight.bold, fontSize: 12));
+                color: stock < qty ? Colors.red : Colors.green,
+                fontWeight: FontWeight.bold,
+                fontSize: 12));
       });
 
   void _removeItem(int index) {
@@ -1222,13 +1256,42 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     }
   }
 
+  Future<void> _selectDate(BuildContext context) async {
+    if (widget.isReadOnly) return; // Disable in read-only mode
+
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: _primaryColor,
+              onPrimary: Colors.white,
+              surface: _surfaceColor,
+              onSurface: _textColor,
+            ),
+            dialogBackgroundColor: _backgroundColor,
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
   Widget _buildCustomerPanel() => Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
           color: _surfaceColor,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)]
-      ),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)]),
       child: Column(children: [
         if (!widget.isReadOnly)
           ElevatedButton.icon(
@@ -1267,7 +1330,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               const Text('Enter Custom Name', style: TextStyle(color: _textColor)),
             ],
           ),
-        const SizedBox(height:10),
+        const SizedBox(height: 10),
         if (_useCustomName || widget.isReadOnly)
           TextField(
             controller: _customCustomerNameController,
@@ -1277,9 +1340,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               filled: true,
               fillColor: _backgroundColor,
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none
-              ),
+                  borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               labelStyle: TextStyle(color: _secondaryTextColor),
             ),
@@ -1309,12 +1370,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                 filled: true,
                 fillColor: _backgroundColor,
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none
-                ),
+                    borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                labelStyle: TextStyle(color: _secondaryTextColor)
-            ),
+                labelStyle: TextStyle(color: _secondaryTextColor)),
             style: TextStyle(color: _textColor),
             onChanged: (value) {
               if (_useCustomName && !widget.isReadOnly) {
@@ -1322,7 +1380,31 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                   _selectedCustomer['number'] = value.trim();
                 });
               }
-            }
+            }),
+        const SizedBox(height: 16),
+        GestureDetector(
+          onTap: () => _selectDate(context),
+          child: AbsorbPointer(
+            child: TextField(
+              enabled: !widget.isReadOnly,
+              controller: TextEditingController(
+                text: DateFormat('dd-MM-yyyy').format(_selectedDate),
+              ),
+              decoration: InputDecoration(
+                labelText: 'Transaction Date',
+                filled: true,
+                fillColor: _backgroundColor,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                labelStyle: TextStyle(color: _secondaryTextColor),
+                suffixIcon: const Icon(Icons.calendar_today, color: _secondaryTextColor),
+              ),
+              style: TextStyle(color: _textColor),
+            ),
+          ),
         ),
         if (!widget.isReadOnly) const SizedBox(height: 24),
         if (!widget.isReadOnly)
@@ -1335,10 +1417,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(vertical: 16)),
               icon: const Icon(Icons.arrow_forward_rounded),
-              label: const Text('PROCEED TO PAYMENT')
-          )
-      ])
-  );
+              label: const Text('PROCEED TO PAYMENT'))
+      ]));
 
   Widget _buildCustomerDropdown() => StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('customers').snapshots(),
@@ -1414,7 +1494,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           labelText: 'Transaction Type',
           filled: true,
           fillColor: _backgroundColor,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+          border:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           labelStyle: TextStyle(color: _secondaryTextColor)));
 
@@ -1525,9 +1606,11 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             ),
             const SizedBox(height: 24),
             if (returnAmount > 0)
-              _buildPaymentStatusIndicator('Change Due', returnAmount, Colors.green, Icons.arrow_upward),
+              _buildPaymentStatusIndicator(
+                  'Change Due', returnAmount, Colors.green, Icons.arrow_upward),
             if (balanceDue > 0)
-              _buildPaymentStatusIndicator('Balance Due', balanceDue, Colors.orange, Icons.error_outline),
+              _buildPaymentStatusIndicator(
+                  'Balance Due', balanceDue, Colors.orange, Icons.error_outline),
             const SizedBox(height: 32),
             Row(
               children: [
@@ -1581,17 +1664,19 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             style: TextStyle(color: valueColor ?? _textColor, fontWeight: FontWeight.bold))
       ]);
 
-  Widget _buildPaymentStatusIndicator(String label, double value, Color color, IconData icon) => Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-      child: Row(children: [
-        Icon(icon, color: color),
-        const SizedBox(width: 12),
-        Expanded(child: Text(label, style: TextStyle(color: _textColor))),
-        Text('${value.toStringAsFixed(0)}/-',
-            style: TextStyle(color: color, fontWeight: FontWeight.bold))
-      ]));
+  Widget _buildPaymentStatusIndicator(String label, double value, Color color, IconData icon) =>
+      Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+              color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+          child: Row(children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label, style: TextStyle(color: _textColor))),
+            Text('${value.toStringAsFixed(0)}/-',
+                style: TextStyle(color: color, fontWeight: FontWeight.bold))
+          ]));
 
   Future<void> _showAddItemDialog() async {
     await showDialog(
@@ -1642,8 +1727,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                                 return ListView.separated(
                                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                                     itemCount: items.length,
-                                    itemBuilder: (_, index) =>
-                                        _buildInventoryItem(items[index].data() as Map<String, dynamic>));
+                                    itemBuilder: (_, index) => _buildInventoryItem(
+                                        items[index].data() as Map<String, dynamic>));
                               }))
                     ])))));
   }
@@ -1723,20 +1808,17 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                 _selectedItemIndex = (_selectedItemIndex! - 1).clamp(0, _cartItems.length - 1);
                 _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
               });
-            }
-            else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
               setState(() {
                 _selectedItemIndex = (_selectedItemIndex! + 1).clamp(0, _cartItems.length - 1);
                 _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
               });
-            }
-            else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
               setState(() {
                 _selectedFieldIndex = (_selectedFieldIndex - 1).clamp(0, 2);
                 _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
               });
-            }
-            else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
               setState(() {
                 _selectedFieldIndex = (_selectedFieldIndex + 1).clamp(0, 2);
                 _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
