@@ -79,7 +79,44 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
     );
   }
 
-  Future<void> _printTransaction(DocumentSnapshot transactionDoc) async {
+  void _showPrintOptions(DocumentSnapshot transactionDoc) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: _backgroundColor,
+          title: const Text('Select Print Size'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('A4'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _printA4(transactionDoc);
+                },
+              ),
+              ListTile(
+                title: const Text('800 (Thermal)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _print800(transactionDoc);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _printA4(DocumentSnapshot transactionDoc) async {
     final invoice = Invoice.fromMap(transactionDoc.id, transactionDoc.data() as Map<String, dynamic>);
     try {
       final pdf = pw.Document();
@@ -357,15 +394,268 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       final pdfBytes = await pdf.save();
       await Printing.layoutPdf(
         onLayout: (_) => pdfBytes,
-        name: 'PFC-INV-${invoice.invoiceNumber}',
+        name: 'PFC-INV-${invoice.invoiceNumber}-A4',
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invoice printed successfully!')),
+        const SnackBar(content: Text('A4 Invoice printed successfully!')),
       );
     } catch (e) {
-      print('Error in _printTransaction: $e');
+      print('Error in _printA4: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to print invoice: $e')),
+        SnackBar(content: Text('Failed to print A4 invoice: $e')),
+      );
+    }
+  }
+
+  Future<void> _print800(DocumentSnapshot transactionDoc) async {
+    final invoice = Invoice.fromMap(transactionDoc.id, transactionDoc.data() as Map<String, dynamic>);
+    try {
+      final pdf = pw.Document();
+      final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
+      DateTime invoiceDate = invoice.timestamp is Timestamp
+          ? (invoice.timestamp as Timestamp).toDate()
+          : DateTime.now();
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, double.infinity),
+          margin: const pw.EdgeInsets.all(5),
+          theme: pw.ThemeData.withFont(
+            base: await PdfGoogleFonts.robotoRegular(),
+            bold: await PdfGoogleFonts.robotoBold(),
+          ),
+          build: (context) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              // Logo and Header
+              pw.Image(pw.MemoryImage(logoImage), width: 50, height: 50),
+              pw.SizedBox(height: 5),
+              pw.Text(
+                'Popular Foam Center',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                ),
+              ),
+              pw.Text(
+                'Zanana Hospital Road, Bahawalpur (63100)',
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+              ),
+              pw.SizedBox(height: 5),
+              pw.Divider(thickness: 1, color: PdfColor.fromHex('#0D6EFD')),
+
+              // Invoice Info
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(vertical: 5),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'INV #${invoice.invoiceNumber}',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#0D6EFD'),
+                      ),
+                    ),
+                    pw.Text(
+                      DateFormat('dd-MM-yy HH:mm').format(invoiceDate),
+                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                    ),
+                  ],
+                ),
+              ),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                    'Type: ${invoice.type.toUpperCase()}',
+                    style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                  ),
+                  pw.Text(
+                    'Cashier: M.Hashim',
+                    style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 5),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text(
+                  'To: ${invoice.customer['name'] ?? 'Walking Customer'}',
+                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Divider(thickness: 0.5, color: PdfColors.grey400),
+
+              // Items Table
+              pw.Table(
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(2.8), // Item Name
+                  1: const pw.FlexColumnWidth(1),   // Qty
+                  2: const pw.FlexColumnWidth(1.5), // Total
+                },
+                border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                children: [
+                  pw.TableRow(
+                    decoration: pw.BoxDecoration(color: PdfColors.grey200),
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(4),
+                        child: pw.Text('Item', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(4),
+                        child: pw.Text('Qty', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(4),
+                        child: pw.Text('Total', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right),
+                      ),
+                    ],
+                  ),
+                  ...invoice.items.map((item) => pw.TableRow(
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(4),
+                        child: pw.Text(
+                          '${item.quality} ${item.itemName}',
+                          style: pw.TextStyle(fontSize: 8, color: PdfColors.black),
+                          maxLines: 2,
+                          overflow: pw.TextOverflow.clip,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(4),
+                        child: pw.Text(
+                          item.qty.toStringAsFixed(0),
+                          style: pw.TextStyle(fontSize: 8),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(4),
+                        child: pw.Text(
+                          numberFormat.format(double.parse(item.total)),
+                          style: pw.TextStyle(fontSize: 8),
+                          textAlign: pw.TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  )),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+
+              // Totals Section
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+                  borderRadius: pw.BorderRadius.circular(4),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Subtotal:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+                        pw.Text(numberFormat.format(invoice.subtotal), style: pw.TextStyle(fontSize: 9)),
+                      ],
+                    ),
+                    if (invoice.globalDiscount > 0)
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('Discount:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+                          pw.Text('-${numberFormat.format(invoice.globalDiscount)}', style: pw.TextStyle(fontSize: 9, color: PdfColors.red)),
+                        ],
+                      ),
+                    pw.SizedBox(height: 5),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Total:', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                        pw.Text(
+                          numberFormat.format(invoice.total),
+                          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD')),
+                        ),
+                      ],
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text('Received:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+                        pw.Text(numberFormat.format(invoice.givenAmount), style: pw.TextStyle(fontSize: 9)),
+                      ],
+                    ),
+                    if (invoice.returnAmount > 0)
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('Change:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+                          pw.Text(numberFormat.format(invoice.returnAmount), style: pw.TextStyle(fontSize: 9, color: PdfColors.green)),
+                        ],
+                      ),
+                    if (invoice.balanceDue > 0)
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text('Due:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
+                          pw.Text(numberFormat.format(invoice.balanceDue), style: pw.TextStyle(fontSize: 9, color: PdfColors.orange)),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Divider(thickness: 1, color: PdfColor.fromHex('#0D6EFD')),
+
+              // Footer
+              pw.Text(
+                'Thank You for Your Business!',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromHex('#0D6EFD'),
+                ),
+              ),
+              pw.SizedBox(height: 5),
+              pw.Text(
+                'Contact: 0302-9596046',
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+              ),
+              pw.Text(
+                'FB: Popular Foam Center',
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+              ),
+              pw.Text(
+                'Claims as per company policy',
+                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+              ),
+              pw.SizedBox(height: 10),
+            ],
+          ),
+        ),
+      );
+
+      final pdfBytes = await pdf.save();
+      await Printing.layoutPdf(
+        onLayout: (_) => pdfBytes,
+        name: 'PFC-INV-${invoice.invoiceNumber}-800',
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('800 Invoice printed successfully!')),
+      );
+    } catch (e) {
+      print('Error in _print800: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to print 800 invoice: $e')),
       );
     }
   }
@@ -551,7 +841,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             Expanded(child: _DataCell(total)),
             Expanded(child: _DataCell(invoice.balanceDue > 0 ? pending : '', null, invoice.balanceDue > 0 ? 'Pending' : 'Paid', invoice.balanceDue > 0 ? Colors.red : Colors.green)),
             Expanded(child: _DataCell(date)),
-            Expanded(child: _ActionCell(transactionDoc, null, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _printTransaction)),
+            Expanded(child: _ActionCell(transactionDoc, null, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _showPrintOptions)),
           ],
         ),
       ),
@@ -605,7 +895,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             _DataCell(total, 150),
             _DataCell(invoice.balanceDue > 0 ? pending : '', 150, invoice.balanceDue > 0 ? 'Pending' : 'Paid', invoice.balanceDue > 0 ? Colors.red : Colors.green),
             _DataCell(date, 150),
-            _ActionCell(transactionDoc, 150, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _printTransaction),
+            _ActionCell(transactionDoc, 150, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _showPrintOptions),
           ],
         ),
       ),

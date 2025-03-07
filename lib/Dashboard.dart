@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import'reports_landing.dart';
 
 class Dashboard extends StatefulWidget {
   final bool isDarkMode;
@@ -196,7 +197,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         bodyMedium: TextStyle(color: Color(0xFF6C757D)),
         titleLarge: TextStyle(color: Color(0xFF1A1A2F), fontWeight: FontWeight.bold),
       ),
-      shadowColor: Colors.grey.withOpacity(0.15), // Softer, more elegant shadow
+      shadowColor: Colors.grey.withOpacity(0.15),
     );
   }
 
@@ -210,7 +211,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         bodyMedium: TextStyle(color: Color(0xFFB0B0C0)),
         titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
-      shadowColor: Colors.black.withOpacity(0.3), // Softer, more elegant shadow
+      shadowColor: Colors.black.withOpacity(0.3),
     );
   }
 
@@ -258,14 +259,7 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
           icon: Icons.inventory_rounded,
           gradient: const [Color(0xFF4E54C8), Color(0xFF8F94FB)],
         ),
-        _buildMetricCard(
-          context,
-          title: "Stock Value",
-          animation: _stockValueAnimation,
-          icon: Icons.attach_money_rounded,
-          gradient: const [Color(0xFF11998E), Color(0xFF38EF7D)],
-          isCurrency: true,
-        ),
+        _buildClickableStockValueCard(context), // Modified to be clickable
         _buildMetricCard(
           context,
           title: "Sales Today",
@@ -303,8 +297,8 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
           boxShadow: [
             BoxShadow(
               color: Theme.of(context).shadowColor,
-              blurRadius: 8, // Increased for softer, elegant shadow
-              offset: const Offset(0, 2), // Slightly raised for beauty
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -343,6 +337,76 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
     );
   }
 
+  // New method for the clickable Stock Value card
+  Widget _buildClickableStockValueCard(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => StockValuationReportPage(
+              isDarkMode: widget.isDarkMode,
+              toggleDarkMode: widget.toggleDarkMode,
+            ),
+          ),
+        );
+      },
+      child: AnimatedBuilder(
+        animation: _stockValueAnimation,
+        builder: (context, child) => Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF11998E), Color(0xFF38EF7D)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).shadowColor,
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          padding: EdgeInsets.all(screenWidth < 600 ? 16 : 24),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.attach_money_rounded, size: screenWidth < 600 ? 24 : 32, color: Colors.white),
+              ),
+              SizedBox(width: screenWidth < 600 ? 12 : 20),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Stock Value",
+                      style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: screenWidth < 600 ? 14 : 16),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${NumberFormat.decimalPattern().format(_stockValueAnimation.value)}/-',
+                      style: TextStyle(color: Colors.white, fontSize: screenWidth < 600 ? 24 : 32, fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios, color: Colors.white.withOpacity(0.7), size: screenWidth < 600 ? 18 : 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTransactionSummary(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,8 +424,8 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
             boxShadow: [
               BoxShadow(
                 color: Theme.of(context).shadowColor,
-                blurRadius: 8, // Increased for softer, elegant shadow
-                offset: const Offset(0, 2), // Slightly raised for beauty
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -466,8 +530,8 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
             boxShadow: [
               BoxShadow(
                 color: Theme.of(context).shadowColor,
-                blurRadius: 8, // Increased for softer, elegant shadow
-                offset: const Offset(0, 2), // Slightly raised for beauty
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -622,8 +686,8 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
           boxShadow: [
             BoxShadow(
               color: Theme.of(context).shadowColor,
-              blurRadius: 8, // Increased for softer, elegant shadow
-              offset: const Offset(0, 2), // Slightly raised for beauty
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -673,8 +737,8 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
             boxShadow: [
               BoxShadow(
                 color: Theme.of(context).shadowColor,
-                blurRadius: 8, // Increased for softer, elegant shadow
-                offset: const Offset(0, 2), // Slightly raised for beauty
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -792,8 +856,8 @@ class _DashboardState extends State<Dashboard> with SingleTickerProviderStateMix
         boxShadow: [
           BoxShadow(
             color: Theme.of(context).shadowColor,
-            blurRadius: 6, // Slightly increased for a softer badge shadow
-            offset: const Offset(0, 1), // Minimal lift for elegance
+            blurRadius: 6,
+            offset: const Offset(0, 1),
           ),
         ],
       ),

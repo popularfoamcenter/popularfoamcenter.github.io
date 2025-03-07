@@ -166,6 +166,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   final TextEditingController _givenAmountController = TextEditingController();
   final TextEditingController _globalDiscountController = TextEditingController();
   final TextEditingController _customCustomerNameController = TextEditingController();
+  final TextEditingController _dateController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
   late Map<String, dynamic> _selectedCustomer;
@@ -179,7 +180,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   int? _deletedIndex;
   String? _returnInvoiceNumber;
   bool _useCustomName = false;
-  late DateTime _selectedDate; // Added for date selection
+  late DateTime _selectedDate;
 
   static const Color _primaryColor = Color(0xFF0D6EFD);
   static const Color _textColor = Color(0xFF2D2D2D);
@@ -195,7 +196,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   void initState() {
     super.initState();
     _initializeState();
-    _selectedDate = DateTime.now(); // Set today's date as initial value
+    _selectedDate = DateTime.now();
+    _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -236,7 +238,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _useCustomName = _selectedCustomer['id']?.isEmpty ?? true;
       _selectedDate = widget.invoice!.timestamp is Timestamp
           ? (widget.invoice!.timestamp as Timestamp).toDate()
-          : DateTime.now(); // Set date from invoice or today
+          : DateTime.now();
+      _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
       }
@@ -245,7 +248,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _selectedTransactionType = 'Sale';
       _customCustomerNameController.text = 'Walking Customer';
       _useCustomName = false;
-      _selectedDate = DateTime.now(); // Default to today
+      _selectedDate = DateTime.now();
+      _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
     }
   }
 
@@ -262,6 +266,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     _givenAmountController.dispose();
     _globalDiscountController.dispose();
     _customCustomerNameController.dispose();
+    _dateController.dispose();
     super.dispose();
   }
 
@@ -606,9 +611,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: givenAmount,
           returnAmount: math.max(givenAmount - total, 0),
           balanceDue: math.max(total - givenAmount, 0),
-          timestamp: isEditing
-              ? widget.invoice!.timestamp
-              : Timestamp.fromDate(_selectedDate), // Use selected date
+          timestamp: Timestamp.fromDate(_selectedDate), // Always use _selectedDate
         );
 
         if (isEditing) {
@@ -635,7 +638,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: invoice.givenAmount,
           returnAmount: invoice.returnAmount,
           balanceDue: invoice.balanceDue,
-          timestamp: Timestamp.fromDate(_selectedDate),
+          timestamp: Timestamp.fromDate(_selectedDate), // Use _selectedDate here too
         );
         await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
         finalInvoice = updatedInvoice;
@@ -1257,7 +1260,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    if (widget.isReadOnly) return; // Disable in read-only mode
+    if (widget.isReadOnly) return;
 
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -1282,6 +1285,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     if (picked != null && picked != _selectedDate) {
       setState(() {
         _selectedDate = picked;
+        _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
       });
     }
   }
@@ -1387,9 +1391,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           child: AbsorbPointer(
             child: TextField(
               enabled: !widget.isReadOnly,
-              controller: TextEditingController(
-                text: DateFormat('dd-MM-yyyy').format(_selectedDate),
-              ),
+              controller: _dateController,
               decoration: InputDecoration(
                 labelText: 'Transaction Date',
                 filled: true,
@@ -1494,8 +1496,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           labelText: 'Transaction Type',
           filled: true,
           fillColor: _backgroundColor,
-          border:
-          OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           labelStyle: TextStyle(color: _secondaryTextColor)));
 

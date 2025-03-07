@@ -18,6 +18,8 @@ import 'package:pfc/main.dart';
 import 'package:pfc/productledger.dart'; // Ensure this points to ProductLedgerPage
 import 'package:provider/provider.dart';
 import 'customerLedger.dart';
+import 'reports_landing.dart'; // Assuming StockValuationReportPage is in reports_landing.dart
+import 'profit&loss.dart'; // Add this import for ProfitAndLossPage
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -61,11 +63,12 @@ class _HomePageState extends State<HomePage> {
       {'icon': Icons.account_balance_sharp, 'label': 'Accounts', 'page': const AccountsPage()},
       {'icon': Icons.edit_note_rounded, 'label': 'Company Ledger', 'page': CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.people_alt_outlined, 'label': 'Customer Ledger', 'page': CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
-      {'icon': Icons.book, 'label': 'Product Ledger', 'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)}, // Updated
+      {'icon': Icons.book, 'label': 'Product Ledger', 'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.attach_money, 'label': 'Cash Register', 'page': const CashRegisterPage()},
+      {'icon': Icons.auto_graph, 'label': 'Stock Valuation Report', 'page': StockValuationReportPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2)},
       {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': const InvoiceListScreen()},
-
+      {'icon': Icons.bar_chart, 'label': 'Profit and Loss', 'page': ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)}, // Added ProfitAndLossPage
     ];
     _currentPage = _navigationItems[0]['page'] as Widget; // Default to Dashboard
   }
@@ -90,41 +93,21 @@ class _HomePageState extends State<HomePage> {
       themeProvider.setThemeMode(_darkModeState == 2 ? ThemeMode.dark : ThemeMode.light);
       _navigationItems = _navigationItems.map((item) {
         if (item['label'] == 'Dashboard') {
-          return {
-            'icon': item['icon'],
-            'label': item['label'],
-            'page': Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
-          };
+          return {'icon': item['icon'], 'label': item['label'], 'page': Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
         } else if (item['label'] == 'Inventory') {
-          return {
-            'icon': item['icon'],
-            'label': item['label'],
-            'page': InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
-          };
+          return {'icon': item['icon'], 'label': item['label'], 'page': InventoryPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
         } else if (item['label'] == 'Purchase Order') {
-          return {
-            'icon': item['icon'],
-            'label': item['label'],
-            'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2),
-          };
+          return {'icon': item['icon'], 'label': item['label'], 'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2)};
         } else if (item['label'] == 'Company Ledger') {
-          return {
-            'icon': item['icon'],
-            'label': item['label'],
-            'page': CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
-          };
+          return {'icon': item['icon'], 'label': item['label'], 'page': CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
         } else if (item['label'] == 'Customer Ledger') {
-          return {
-            'icon': item['icon'],
-            'label': item['label'],
-            'page': CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
-          };
-        } else if (item['label'] == 'Product Ledger') { // Added Product Ledger
-          return {
-            'icon': item['icon'],
-            'label': item['label'],
-            'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode),
-          };
+          return {'icon': item['icon'], 'label': item['label'], 'page': CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
+        } else if (item['label'] == 'Product Ledger') {
+          return {'icon': item['icon'], 'label': item['label'], 'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
+        } else if (item['label'] == 'Stock Valuation Report') {
+          return {'icon': item['icon'], 'label': item['label'], 'page': StockValuationReportPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
+        } else if (item['label'] == 'Profit and Loss') { // Added for ProfitAndLossPage
+          return {'icon': item['icon'], 'label': item['label'], 'page': ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
         }
         return item;
       }).toList();
@@ -140,8 +123,12 @@ class _HomePageState extends State<HomePage> {
         _currentPage = CompanyLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Customer Ledger") {
         _currentPage = CustomerLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
-      } else if (_selectedButton == "Product Ledger") { // Added Product Ledger
+      } else if (_selectedButton == "Product Ledger") {
         _currentPage = ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
+      } else if (_selectedButton == "Stock Valuation Report") {
+        _currentPage = StockValuationReportPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
+      } else if (_selectedButton == "Profit and Loss") { // Added for ProfitAndLossPage
+        _currentPage = ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       }
     });
   }
