@@ -28,9 +28,8 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
   DateTime? _toDate;
   Map<String, Map<String, dynamic>> _qualityDiscounts = {};
   List<Map<String, dynamic>> _filteredItems = [];
-  bool _isPrinting = false; // Added loading state
+  bool _isPrinting = false;
 
-  // Color Scheme
   Color get _primaryColor => const Color(0xFF0D6EFD);
   Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
   Color get _secondaryTextColor => widget.isDarkMode ? const Color(0xFFB0B0C0) : const Color(0xFF4A4A4A);
@@ -155,17 +154,31 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
   }
 
   Future<void> _printStockValuationReport(List<Map<String, dynamic>> items, double totalStockValue) async {
-    setState(() => _isPrinting = true); // Start loading
+    setState(() => _isPrinting = true);
 
     try {
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
       final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
 
+      // Filter out items with zero or negative current stock
+      final printableItems = items.where((item) => (item['stockQuantity'] ?? 0) > 0).toList();
+
+      if (printableItems.isEmpty) {
+        throw Exception('No items with positive stock quantity available to print');
+      }
+
+      // Calculate total stock quantity
+      final totalStockQuantity = printableItems.fold<double>(
+        0,
+            (sum, item) => sum + (item['stockQuantity'] ?? 0),
+      );
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          header: (_) => pw.Column(
+          header: (context) => context.pageNumber == 1 // Show header only on first page
+              ? pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Row(
@@ -181,9 +194,9 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                               color: PdfColor.fromHex('#0D6EFD'))),
                       pw.SizedBox(height: 8),
                       pw.Text('Popular Foam Center',
-                          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                       pw.Text('Zanana Hospital Road, Bahawalpur (63100)',
-                          style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
+                          style: const pw.TextStyle(fontSize: 10)),
                     ],
                   ),
                   pw.Image(pw.MemoryImage(logoImage), width: 135, height: 135),
@@ -196,26 +209,28 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Company:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColors.black)),
-                      pw.Text(_selectedCompanyName ?? 'N/A', style: const pw.TextStyle(fontSize: 14, color: PdfColors.black)),
+                      pw.Text('Company:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                      pw.Text(_selectedCompanyName ?? 'N/A', style: const pw.TextStyle(fontSize: 14)),
                       pw.SizedBox(height: 8),
-                      pw.Text('Date Range:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColors.black)),
+                      pw.Text('Date Range:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
                       pw.Text(
                           '${_fromDate != null ? DateFormat('dd-MM-yyyy').format(_fromDate!) : 'N/A'} - ${_toDate != null ? DateFormat('dd-MM-yyyy').format(_toDate!) : 'N/A'}',
-                          style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
+                          style: const pw.TextStyle(fontSize: 12)),
                     ],
                   ),
                 ],
               ),
               pw.SizedBox(height: 30),
             ],
-          ),
-          footer: (_) => pw.Container(
+          )
+              : pw.Container(), // Empty container instead of null
+          footer: (context) => context.pageNumber == context.pagesCount // Show footer only on last page
+              ? pw.Container(
             width: double.infinity,
             padding: const pw.EdgeInsets.all(10),
             decoration: pw.BoxDecoration(
               color: PdfColor.fromHex('#F8F9FA'),
-              border: pw.Border(top: pw.BorderSide(color: PdfColor.fromHex('#0D6EFD'), width: 1)),
+              border: pw.Border(top: pw.BorderSide(color: PdfColor.fromHex('#0D6EFD'))),
             ),
             child: pw.Column(
               children: [
@@ -223,10 +238,17 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                     style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD'))),
                 pw.SizedBox(height: 4),
                 pw.Text('Contact: 0302-9596046 | Facebook: Popular Foam Center',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+                    style: const pw.TextStyle(fontSize: 9)),
                 pw.Text('Notes: Subject to company terms and conditions',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
+                    style: const pw.TextStyle(fontSize: 9)),
               ],
+            ),
+          )
+              : pw.Container(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Page ${context.pageNumber} of ${context.pagesCount}',
+              style: const pw.TextStyle(fontSize: 10),
             ),
           ),
           build: (pw.Context context) => [
@@ -250,7 +272,7 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                     'Item',
                     'Cvrd',
                     'Op. Stock',
-                    'St. Stock',
+                    'C. Stock',
                     'Price',
                     'Disc%',
                     'Value',
@@ -262,7 +284,7 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                         style: pw.TextStyle(color: PdfColors.white, fontSize: 10, fontWeight: pw.FontWeight.bold)),
                   )).toList(),
                 ),
-                ...items.map((item) {
+                ...printableItems.map((item) {
                   final qualityId = item['qualityId'];
                   final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
                   final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
@@ -274,49 +296,49 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['qualityName'],
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['itemName'],
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['covered'],
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['openingStock'].toString(),
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['stockQuantity'].toString(),
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(numberFormat.format(item['purchasePrice']),
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text('$discount%',
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(numberFormat.format(stockValue),
                               textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                              style: const pw.TextStyle(fontSize: 10))),
                     ],
                   );
                 }),
@@ -330,10 +352,10 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                 children: [
                   pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
                     pw.Text('Total Value:',
-                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
                     pw.SizedBox(width: 15),
                     pw.Text(numberFormat.format(totalStockValue),
-                        style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
+                        style: const pw.TextStyle(fontSize: 10)),
                   ]),
                   pw.SizedBox(height: 15),
                   pw.Container(
@@ -342,14 +364,14 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                     decoration: pw.BoxDecoration(
                       color: PdfColor.fromHex('#F8F9FA'),
                       borderRadius: pw.BorderRadius.circular(6),
-                      border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+                      border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD')),
                     ),
                     child: pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text('TOTAL ITEMS',
-                            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-                        pw.Text(items.length.toString(),
+                            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                        pw.Text(totalStockQuantity.toStringAsFixed(0),  // Changed to show sum of quantities
                             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD'))),
                       ],
                     ),
@@ -370,7 +392,7 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isPrinting = false); // Stop loading
+        setState(() => _isPrinting = false);
       }
     }
   }
@@ -404,7 +426,7 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
     await _printStockValuationReport(_filteredItems, totalStockValue);
 
     if (mounted) {
-      Navigator.of(context).pop(); // Close loading dialog
+      Navigator.of(context).pop();
     }
   }
 
@@ -562,7 +584,7 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
             Expanded(flex: 2, child: _HeaderCell('Item')),
             Expanded(child: _HeaderCell('Cvrd')),
             Expanded(child: _HeaderCell('Op. Stock')),
-            Expanded(child: _HeaderCell('St. Stock')),
+            Expanded(child: _HeaderCell('C. Stock')),
             Expanded(child: _HeaderCell('Price')),
             Expanded(child: _HeaderCell('Disc%')),
             Expanded(child: _HeaderCell('Value')),
@@ -591,7 +613,7 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
             _HeaderCell('Item', 300),
             _HeaderCell('Cvrd', 150),
             _HeaderCell('Op. Stock', 150),
-            _HeaderCell('St. Stock', 150),
+            _HeaderCell('C. Stock', 150),
             _HeaderCell('Price', 150),
             _HeaderCell('Disc%', 150),
             _HeaderCell('Value', 200),
