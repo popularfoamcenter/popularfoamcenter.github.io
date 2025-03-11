@@ -1,7 +1,7 @@
 # pfc
 
 Inventory management system by Muhammad Usman
-Contact : rajarehman.dev@gmail.com
+Contact : business.world.usman@gmail.com
 
 ## Getting Started
 
