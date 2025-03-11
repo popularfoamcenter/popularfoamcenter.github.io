@@ -24,10 +24,11 @@ class ProcessedTransaction {
   final String details;
   final double received;
   final double given;
+  final double returned;
   final double balance;
   final DateTime date;
 
-  ProcessedTransaction(this.docId, this.type, this.details, this.received, this.given, this.balance, this.date);
+  ProcessedTransaction(this.docId, this.type, this.details, this.received, this.given, this.returned, this.balance, this.date);
 }
 
 class ProductLedgerPage extends StatefulWidget {
@@ -43,7 +44,7 @@ class ProductLedgerPage extends StatefulWidget {
 class _ProductLedgerPageState extends State<ProductLedgerPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ScrollController _horizontalScrollController = ScrollController();
-  final double _mobileTableWidth = 1200;
+  final double _mobileTableWidth = 1400; // Increased width to accommodate "Returned" column
   String? _selectedQuality;
   String? _selectedItem;
   DateTime? _fromDate;
@@ -56,23 +57,9 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
 
   Future<List<ProcessedTransaction>> _fetchLedgerTransactions(String quality) async {
     List<ProcessedTransaction> transactions = [];
-    double initialBalance = 0.0;
+    double initialBalance = await _fetchOpeningBalance();
 
-    QuerySnapshot itemsSnapshot = await _firestore
-        .collection('items')
-        .where('qualityName', isEqualTo: quality)
-        .get();
-    for (var itemDoc in itemsSnapshot.docs) {
-      var itemData = itemDoc.data() as Map<String, dynamic>;
-      String itemName = itemData['itemName'] ?? 'Unknown';
-      if (_selectedItem != null && itemName != _selectedItem) continue;
-      double stock = itemData['openingStock'] is String
-          ? double.tryParse(itemData['openingStock'] as String) ?? 0.0
-          : (itemData['openingStock'] as num?)?.toDouble() ?? 0.0;
-      initialBalance += stock;
-    }
-    double runningBalance = initialBalance;
-
+    // Fetch and process all transactions without calculating balance yet
     QuerySnapshot purchasesSnapshot = await _firestore.collection('purchaseinvoices').get();
     for (var purchase in purchasesSnapshot.docs) {
       var purchaseData = purchase.data() as Map<String, dynamic>;
@@ -91,17 +78,19 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           double qty = item['quantity'] is String
               ? double.tryParse(item['quantity'] as String) ?? 0.0
               : (item['quantity'] as num?)?.toDouble() ?? 0.0;
-          runningBalance += qty;
-          String invoiceId = purchaseData['invoiceId']?.toString() ?? purchase.id;
-          transactions.add(ProcessedTransaction(
-            purchase.id,
-            'Purchase',
-            'Purchase #$invoiceId',
-            qty,
-            0.0,
-            runningBalance,
-            date,
-          ));
+          if (qty > 0) {
+            String invoiceId = purchaseData['invoiceId']?.toString() ?? purchase.id;
+            transactions.add(ProcessedTransaction(
+              purchase.id,
+              'Purchase',
+              'Purchase #$invoiceId',
+              qty,
+              0.0,
+              0.0, // No returns here
+              0.0, // Placeholder balance
+              date,
+            ));
+          }
         }
       }
     }
@@ -120,22 +109,90 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           double qty = item['qty'] is String
               ? double.tryParse(item['qty'] as String) ?? 0.0
               : (item['qty'] as num?)?.toDouble() ?? 0.0;
-          runningBalance -= qty;
-          String invoiceNumber = saleData['invoiceNumber']?.toString() ?? sale.id;
-          transactions.add(ProcessedTransaction(
-            sale.id,
-            'Sale',
-            'Sale #$invoiceNumber',
-            0.0,
-            qty,
-            runningBalance,
-            date,
-          ));
+          if (qty > 0) {
+            String invoiceNumber = saleData['invoiceNumber']?.toString() ?? sale.id;
+            transactions.add(ProcessedTransaction(
+              sale.id,
+              'Sale',
+              'Sale #$invoiceNumber',
+              0.0,
+              qty,
+              0.0, // No returns here
+              0.0, // Placeholder balance
+              date,
+            ));
+          }
         }
       }
     }
 
+    // Fetch and process return transactions
+    QuerySnapshot returnsSnapshot = await _firestore.collection('invoices').where('type', isEqualTo: 'Return').get();
+    for (var returnDoc in returnsSnapshot.docs) {
+      var returnData = returnDoc.data() as Map<String, dynamic>;
+      var items = returnData['items'] as List<dynamic>? ?? [];
+      DateTime? date = (returnData['timestamp'] as Timestamp?)?.toDate();
+      if (date == null) continue;
+      if (_fromDate != null && date.isBefore(_fromDate!)) continue;
+      if (_toDate != null && date.isAfter(_toDate!)) continue;
+
+      for (var item in items) {
+        if (item['quality'] == quality && (_selectedItem == null || item['item'] == _selectedItem)) {
+          double qty = item['qty'] is String
+              ? double.tryParse(item['qty'] as String) ?? 0.0
+              : (item['qty'] as num?)?.toDouble() ?? 0.0;
+          if (qty > 0) {
+            String returnNumber = returnData['invoiceNumber']?.toString() ?? returnDoc.id;
+            transactions.add(ProcessedTransaction(
+              returnDoc.id,
+              'Return',
+              'Return #$returnNumber',
+              0.0,
+              0.0,
+              qty, // Returned quantity
+              0.0, // Placeholder balance
+              date,
+            ));
+          }
+        }
+      }
+    }
+
+    // Sort transactions by date
     transactions.sort((a, b) => a.date.compareTo(b.date));
+
+    // Calculate running balance chronologically
+    double runningBalance = initialBalance;
+    List<ProcessedTransaction> updatedTransactions = [];
+    for (var transaction in transactions) {
+      if (transaction.type == 'Purchase') {
+        runningBalance += transaction.received;
+      } else if (transaction.type == 'Sale') {
+        runningBalance -= transaction.given;
+      } else if (transaction.type == 'Return') {
+        runningBalance += transaction.returned; // Returns increase stock
+      }
+      updatedTransactions.add(ProcessedTransaction(
+        transaction.docId,
+        transaction.type,
+        transaction.details,
+        transaction.received,
+        transaction.given,
+        transaction.returned,
+        runningBalance,
+        transaction.date,
+      ));
+    }
+    transactions = updatedTransactions; // Assign the updated list
+
+    // Debugging logs
+    print('Initial Balance: $initialBalance');
+    for (var transaction in transactions) {
+      print('Date: ${DateFormat('dd-MM-yyyy').format(transaction.date)}, Type: ${transaction.type}, '
+          'Received: ${transaction.received}, Given: ${transaction.given}, Returned: ${transaction.returned}, '
+          'Balance: ${transaction.balance}');
+    }
+
     return transactions;
   }
 
@@ -161,22 +218,25 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
   }
 
   Future<Map<String, dynamic>> _calculateSummary() async {
-    if (_selectedQuality == null) return {'totalReceived': 0.0, 'totalGiven': 0.0, 'finalBalance': 0.0};
+    if (_selectedQuality == null) return {'totalReceived': 0.0, 'totalGiven': 0.0, 'totalReturned': 0.0, 'finalBalance': 0.0};
 
     final transactions = await _fetchLedgerTransactions(_selectedQuality!);
     double totalReceived = 0.0;
     double totalGiven = 0.0;
+    double totalReturned = 0.0;
     double initialBalance = await _fetchOpeningBalance();
 
     for (var transaction in transactions) {
       totalReceived += transaction.received;
       totalGiven += transaction.given;
+      totalReturned += transaction.returned;
     }
-    double finalBalance = initialBalance + totalReceived - totalGiven;
+    double finalBalance = initialBalance + totalReceived - totalGiven + totalReturned;
 
     return {
       'totalReceived': totalReceived,
       'totalGiven': totalGiven,
+      'totalReturned': totalReturned,
       'finalBalance': finalBalance,
     };
   }
@@ -220,10 +280,11 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
                 return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
               }
 
-              final summary = snapshot.data ?? {'totalReceived': 0.0, 'totalGiven': 0.0, 'finalBalance': 0.0};
+              final summary = snapshot.data ?? {'totalReceived': 0.0, 'totalGiven': 0.0, 'totalReturned': 0.0, 'finalBalance': 0.0};
               return _buildSummaryFooter(
                 summary['totalReceived'] as double,
                 summary['totalGiven'] as double,
+                summary['totalReturned'] as double,
                 summary['finalBalance'] as double,
               );
             },
@@ -254,16 +315,16 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
             ),
           ),
         );
-      } else if (transaction.type == 'Sale') {
-        DocumentSnapshot saleDoc = await _firestore.collection('invoices').doc(transaction.docId).get();
-        if (!saleDoc.exists) {
+      } else if (transaction.type == 'Sale' || transaction.type == 'Return') {
+        DocumentSnapshot doc = await _firestore.collection('invoices').doc(transaction.docId).get();
+        if (!doc.exists) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sales invoice not found')),
+            const SnackBar(content: Text('Invoice not found')),
           );
           return;
         }
-        final saleData = saleDoc.data() as Map<String, dynamic>;
-        Invoice invoice = Invoice.fromMap(transaction.docId, saleData);
+        final data = doc.data() as Map<String, dynamic>;
+        Invoice invoice = Invoice.fromMap(transaction.docId, data);
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -399,6 +460,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           isDesktop ? const Expanded(flex: 2, child: _HeaderCell('Details')) : const _HeaderCell('Details', 300),
           isDesktop ? const Expanded(child: _HeaderCell('Received')) : const _HeaderCell('Received', 150),
           isDesktop ? const Expanded(child: _HeaderCell('Given')) : const _HeaderCell('Given', 150),
+          isDesktop ? const Expanded(child: _HeaderCell('Returned')) : const _HeaderCell('Returned', 150),
           isDesktop ? const Expanded(child: _HeaderCell('Balance')) : const _HeaderCell('Balance', 150),
         ],
       ),
@@ -453,6 +515,19 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               transaction.given > 0 ? transaction.given.toStringAsFixed(0) : '-',
               150,
               transaction.given > 0 ? Colors.red : _secondaryTextColor,
+            ),
+            isDesktop
+                ? Expanded(
+              child: _DataCell(
+                transaction.returned > 0 ? transaction.returned.toStringAsFixed(0) : '-',
+                null,
+                transaction.returned > 0 ? Colors.orange : _secondaryTextColor, // Orange for returns
+              ),
+            )
+                : _DataCell(
+              transaction.returned > 0 ? transaction.returned.toStringAsFixed(0) : '-',
+              150,
+              transaction.returned > 0 ? Colors.orange : _secondaryTextColor,
             ),
             isDesktop
                 ? Expanded(
@@ -513,7 +588,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     ),
   );
 
-  Widget _buildSummaryFooter(double totalReceived, double totalGiven, double finalBalance) => Container(
+  Widget _buildSummaryFooter(double totalReceived, double totalGiven, double totalReturned, double finalBalance) => Container(
     margin: const EdgeInsets.all(24),
     padding: const EdgeInsets.all(24),
     decoration: BoxDecoration(
@@ -528,6 +603,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           children: [
             _buildFooterColumn('Total Received', totalReceived, Colors.green),
             _buildFooterColumn('Total Given', totalGiven, Colors.red),
+            _buildFooterColumn('Total Returned', totalReturned, Colors.orange),
             _buildFooterColumn('Final Balance', finalBalance, finalBalance >= 0 ? Colors.green : Colors.red),
           ],
         ),

@@ -448,7 +448,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     return false;
   }
 
-  Future<void> _validateAndUpdateStock(Transaction transaction) async {
+  Future<void> _validateAndUpdateStock(Transaction transaction, String originalType) async {
     if (_selectedTransactionType == 'Order Booking') return;
 
     for (final item in _cartItems) {
@@ -465,14 +465,27 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       final qtyChange = item.qty - item.originalQty;
 
       if (qtyChange != 0) {
-        final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
-        if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
-        transaction.update(ref, {'stockQuantity': newStock});
+        // If transaction type changed, reverse the original stock adjustment
+        if (originalType != _selectedTransactionType) {
+          final originalQtyChange = item.originalQty;
+          final originalAdjustment = originalType == 'Return' ? originalQtyChange : -originalQtyChange;
+          final newStockAfterRevert = stock + originalAdjustment; // Revert original change
+          // Apply new adjustment based on new transaction type
+          final newAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
+          final newStock = newStockAfterRevert + newAdjustment;
+          if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName} after type change');
+          transaction.update(ref, {'stockQuantity': newStock});
+        } else {
+          // If type unchanged, apply adjustment based on current type
+          final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
+          if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
+          transaction.update(ref, {'stockQuantity': newStock});
+        }
       }
     }
   }
 
-  Future<void> _updateStockForEditedItems(Transaction transaction) async {
+  Future<void> _updateStockForEditedItems(Transaction transaction, String originalType) async {
     if (_selectedTransactionType == 'Order Booking') return;
 
     for (final newItem in _cartItems) {
@@ -491,7 +504,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       );
 
       final qtyChange = newItem.qty - oldItem.qty;
-      if (qtyChange != 0) {
+      if (qtyChange != 0 || (originalType == 'Order Booking' && _selectedTransactionType == 'Sale')) {
         final snapshot = await _firestore
             .collection('items')
             .where('itemName', isEqualTo: newItem.itemName)
@@ -502,15 +515,28 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         if (snapshot.docs.isNotEmpty) {
           final ref = snapshot.docs.first.reference;
           final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-          final stockAdjustment =
-          _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
-          final newStock = currentStock + stockAdjustment;
 
-          if (newStock < 0) {
-            throw Exception('Insufficient stock for ${newItem.itemName}');
+          // Special handling for Order Booking to Sale conversion
+          if (originalType == 'Order Booking' && _selectedTransactionType == 'Sale') {
+            final newStock = currentStock - newItem.qty; // Deduct full new qty as sale fulfillment
+            if (newStock < 0) throw Exception('Insufficient stock for ${newItem.itemName} after converting to Sale');
+            transaction.update(ref, {'stockQuantity': newStock});
+          } else if (originalType != _selectedTransactionType) {
+            // Handle other type changes (e.g., Sale to Return, Return to Sale)
+            final originalQtyChange = oldItem.qty;
+            final originalAdjustment = originalType == 'Return' ? originalQtyChange : -originalQtyChange;
+            final stockAfterRevert = currentStock + originalAdjustment;
+            final newAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
+            final newStock = stockAfterRevert + newAdjustment;
+            if (newStock < 0) throw Exception('Insufficient stock for ${newItem.itemName} after type change');
+            transaction.update(ref, {'stockQuantity': newStock});
+          } else {
+            // If type unchanged, apply adjustment based on current type
+            final stockAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
+            final newStock = currentStock + stockAdjustment;
+            if (newStock < 0) throw Exception('Insufficient stock for ${newItem.itemName}');
+            transaction.update(ref, {'stockQuantity': newStock});
           }
-
-          transaction.update(ref, {'stockQuantity': newStock});
         }
       }
     }
@@ -531,8 +557,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           if (snapshot.docs.isNotEmpty) {
             final ref = snapshot.docs.first.reference;
             final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-            final stockAdjustment =
-            _selectedTransactionType == 'Return' ? -oldItem.qty : oldItem.qty;
+            final stockAdjustment = originalType == 'Return' ? -oldItem.qty : oldItem.qty;
             transaction.update(ref, {'stockQuantity': currentStock + stockAdjustment});
           }
         }
@@ -574,6 +599,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     final subtotal = _calculateSubtotal();
     final total = _calculateTotal();
     final givenAmount = double.tryParse(_givenAmountController.text) ?? 0.0;
+    final originalType = widget.invoice?.type ?? _selectedTransactionType; // Store original type
 
     final isEditing = widget.invoice != null;
     final invoiceRef = isEditing
@@ -584,9 +610,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     try {
       final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
         if (isEditing) {
-          await _updateStockForEditedItems(transaction);
+          await _updateStockForEditedItems(transaction, originalType);
         } else {
-          await _validateAndUpdateStock(transaction);
+          await _validateAndUpdateStock(transaction, originalType);
         }
 
         final customerData = _useCustomName
@@ -611,7 +637,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: givenAmount,
           returnAmount: math.max(givenAmount - total, 0),
           balanceDue: math.max(total - givenAmount, 0),
-          timestamp: Timestamp.fromDate(_selectedDate), // Always use _selectedDate
+          timestamp: Timestamp.fromDate(_selectedDate),
         );
 
         if (isEditing) {
@@ -638,7 +664,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: invoice.givenAmount,
           returnAmount: invoice.returnAmount,
           balanceDue: invoice.balanceDue,
-          timestamp: Timestamp.fromDate(_selectedDate), // Use _selectedDate here too
+          timestamp: Timestamp.fromDate(_selectedDate),
         );
         await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
         finalInvoice = updatedInvoice;

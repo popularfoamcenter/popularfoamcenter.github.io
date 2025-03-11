@@ -97,7 +97,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                 },
               ),
               ListTile(
-                title: const Text('800 (Thermal)'),
+                title: const Text('80x297 (Thermal)'),
                 onTap: () {
                   Navigator.pop(context);
                   _print800(transactionDoc);
@@ -419,8 +419,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
 
       pdf.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, double.infinity),
-          margin: const pw.EdgeInsets.all(5),
+          pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 5 * PdfPageFormat.mm),
           theme: pw.ThemeData.withFont(
             base: await PdfGoogleFonts.robotoRegular(),
             bold: await PdfGoogleFonts.robotoBold(),
@@ -429,72 +428,59 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
               // Logo and Header
-              pw.Image(pw.MemoryImage(logoImage), width: 50, height: 50),
-              pw.SizedBox(height: 5),
+              pw.Image(pw.MemoryImage(logoImage), width: 40, height: 40),
+              pw.SizedBox(height: 3),
               pw.Text(
                 'Popular Foam Center',
-                style: pw.TextStyle(
-                  fontSize: 14,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.black,
-                ),
+                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                textAlign: pw.TextAlign.center,
               ),
               pw.Text(
-                'Zanana Hospital Road, Bahawalpur (63100)',
+                'Zanana Hospital Road, Bahawalpur',
                 style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                textAlign: pw.TextAlign.center,
               ),
-              pw.SizedBox(height: 5),
+              pw.SizedBox(height: 3),
               pw.Divider(thickness: 1, color: PdfColor.fromHex('#0D6EFD')),
 
               // Invoice Info
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(vertical: 5),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      'INV #${invoice.invoiceNumber}',
-                      style: pw.TextStyle(
-                        fontSize: 10,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('#0D6EFD'),
-                      ),
-                    ),
-                    pw.Text(
-                      DateFormat('dd-MM-yy HH:mm').format(invoiceDate),
-                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
-                    ),
-                  ],
-                ),
-              ),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'Type: ${invoice.type.toUpperCase()}',
-                    style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                    'INV #${invoice.invoiceNumber}',
+                    style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD')),
                   ),
                   pw.Text(
-                    'Cashier: M.Hashim',
-                    style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
+                    DateFormat('dd-MM-yy HH:mm').format(invoiceDate),
+                    style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
                   ),
                 ],
               ),
-              pw.SizedBox(height: 5),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Type: ${invoice.type.toUpperCase()}', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                  pw.Text('Cashier: M.Hashim', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                ],
+              ),
+              pw.SizedBox(height: 3),
               pw.Align(
                 alignment: pw.Alignment.centerLeft,
                 child: pw.Text(
                   'To: ${invoice.customer['name'] ?? 'Walking Customer'}',
-                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                  style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                  maxLines: 1,
+                  overflow: pw.TextOverflow.clip,
                 ),
               ),
-              pw.SizedBox(height: 8),
+              pw.SizedBox(height: 5),
               pw.Divider(thickness: 0.5, color: PdfColors.grey400),
 
               // Items Table
               pw.Table(
                 columnWidths: {
-                  0: const pw.FlexColumnWidth(2.8), // Item Name
+                  0: const pw.FlexColumnWidth(2.5), // Item Name
                   1: const pw.FlexColumnWidth(1),   // Qty
                   2: const pw.FlexColumnWidth(1.5), // Total
                 },
@@ -504,43 +490,43 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                     decoration: pw.BoxDecoration(color: PdfColors.grey200),
                     children: [
                       pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text('Item', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                        padding: const pw.EdgeInsets.all(3),
+                        child: pw.Text('Item', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
                       ),
                       pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text('Qty', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+                        padding: const pw.EdgeInsets.all(3),
+                        child: pw.Text('Qty', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
                       ),
                       pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text('Total', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right),
+                        padding: const pw.EdgeInsets.all(3),
+                        child: pw.Text('Total', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.right),
                       ),
                     ],
                   ),
                   ...invoice.items.map((item) => pw.TableRow(
                     children: [
                       pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
+                        padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
                           '${item.quality} ${item.itemName}',
-                          style: pw.TextStyle(fontSize: 8, color: PdfColors.black),
+                          style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
                           maxLines: 2,
                           overflow: pw.TextOverflow.clip,
                         ),
                       ),
                       pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
+                        padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
                           item.qty.toStringAsFixed(0),
-                          style: pw.TextStyle(fontSize: 8),
+                          style: pw.TextStyle(fontSize: 7),
                           textAlign: pw.TextAlign.center,
                         ),
                       ),
                       pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
+                        padding: const pw.EdgeInsets.all(3),
                         child: pw.Text(
                           numberFormat.format(double.parse(item.total)),
-                          style: pw.TextStyle(fontSize: 8),
+                          style: pw.TextStyle(fontSize: 7),
                           textAlign: pw.TextAlign.right,
                         ),
                       ),
@@ -548,11 +534,11 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                   )),
                 ],
               ),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 8),
 
               // Totals Section
               pw.Container(
-                padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+                padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 5),
                 decoration: pw.BoxDecoration(
                   border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
                   borderRadius: pw.BorderRadius.circular(4),
@@ -563,82 +549,82 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('Subtotal:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
-                        pw.Text(numberFormat.format(invoice.subtotal), style: pw.TextStyle(fontSize: 9)),
+                        pw.Text('Subtotal:', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                        pw.Text(numberFormat.format(invoice.subtotal), style: pw.TextStyle(fontSize: 8)),
                       ],
                     ),
                     if (invoice.globalDiscount > 0)
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text('Discount:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
-                          pw.Text('-${numberFormat.format(invoice.globalDiscount)}', style: pw.TextStyle(fontSize: 9, color: PdfColors.red)),
+                          pw.Text('Discount:', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                          pw.Text('-${numberFormat.format(invoice.globalDiscount)}', style: pw.TextStyle(fontSize: 8, color: PdfColors.red)),
                         ],
                       ),
-                    pw.SizedBox(height: 5),
+                    pw.SizedBox(height: 3),
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('Total:', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                        pw.Text('Total:', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
                         pw.Text(
                           numberFormat.format(invoice.total),
-                          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD')),
+                          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD')),
                         ),
                       ],
                     ),
-                    pw.SizedBox(height: 5),
+                    pw.SizedBox(height: 3),
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('Received:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
-                        pw.Text(numberFormat.format(invoice.givenAmount), style: pw.TextStyle(fontSize: 9)),
+                        pw.Text('Received:', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                        pw.Text(numberFormat.format(invoice.givenAmount), style: pw.TextStyle(fontSize: 8)),
                       ],
                     ),
                     if (invoice.returnAmount > 0)
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text('Change:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
-                          pw.Text(numberFormat.format(invoice.returnAmount), style: pw.TextStyle(fontSize: 9, color: PdfColors.green)),
+                          pw.Text('Change:', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                          pw.Text(numberFormat.format(invoice.returnAmount), style: pw.TextStyle(fontSize: 8, color: PdfColors.green)),
                         ],
                       ),
                     if (invoice.balanceDue > 0)
                       pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text('Due:', style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800)),
-                          pw.Text(numberFormat.format(invoice.balanceDue), style: pw.TextStyle(fontSize: 9, color: PdfColors.orange)),
+                          pw.Text('Due:', style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800)),
+                          pw.Text(numberFormat.format(invoice.balanceDue), style: pw.TextStyle(fontSize: 8, color: PdfColors.orange)),
                         ],
                       ),
                   ],
                 ),
               ),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 8),
               pw.Divider(thickness: 1, color: PdfColor.fromHex('#0D6EFD')),
 
               // Footer
               pw.Text(
-                'Thank You for Your Business!',
-                style: pw.TextStyle(
-                  fontSize: 10,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColor.fromHex('#0D6EFD'),
-                ),
+                'Thank You!',
+                style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD')),
+                textAlign: pw.TextAlign.center,
               ),
-              pw.SizedBox(height: 5),
+              pw.SizedBox(height: 3),
               pw.Text(
                 'Contact: 0302-9596046',
-                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+                textAlign: pw.TextAlign.center,
               ),
               pw.Text(
                 'FB: Popular Foam Center',
-                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+                textAlign: pw.TextAlign.center,
               ),
               pw.Text(
-                'Claims as per company policy',
-                style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                'Claims as per policy',
+                style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+                textAlign: pw.TextAlign.center,
               ),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 5), // Final spacing to ensure footer is fully printed
             ],
           ),
         ),
@@ -647,18 +633,195 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       final pdfBytes = await pdf.save();
       await Printing.layoutPdf(
         onLayout: (_) => pdfBytes,
-        name: 'PFC-INV-${invoice.invoiceNumber}-800',
+        name: 'PFC-INV-${invoice.invoiceNumber}-80mm',
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('800 Invoice printed successfully!')),
+        const SnackBar(content: Text('80mm Invoice printed successfully!')),
       );
     } catch (e) {
       print('Error in _print800: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to print 800 invoice: $e')),
+        SnackBar(content: Text('Failed to print 80mm invoice: $e')),
       );
     }
   }
+
+  Future<void> _completeOrder(DocumentSnapshot transactionDoc, double additionalAmount) async {
+    final invoice = Invoice.fromMap(transactionDoc.id, transactionDoc.data() as Map<String, dynamic>);
+    if (invoice.type != 'Order Booking') return;
+
+    final invoiceRef = _firestore.collection('invoices').doc(invoice.id);
+
+    try {
+      await _firestore.runTransaction((transaction) async {
+        // Update stock for Order Booking to Sale conversion
+        for (final item in invoice.items) {
+          final snapshot = await _firestore
+              .collection('items')
+              .where('itemName', isEqualTo: item.itemName)
+              .where('qualityName', isEqualTo: item.quality)
+              .limit(1)
+              .get(GetOptions(source: Source.server));
+
+          if (snapshot.docs.isNotEmpty) {
+            final ref = snapshot.docs.first.reference;
+            final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
+            final newStock = currentStock - item.qty; // Deduct full qty as per PointOfSalePage logic
+            if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
+            transaction.update(ref, {'stockQuantity': newStock});
+          }
+        }
+
+        // Update invoice with new payment details
+        final newGivenAmount = invoice.givenAmount + additionalAmount;
+        final newBalanceDue = (invoice.total - newGivenAmount).clamp(0, double.infinity);
+        final newReturnAmount = (newGivenAmount - invoice.total).clamp(0, double.infinity);
+
+        final updatedData = invoice.toMap()
+          ..['type'] = 'Sale'
+          ..['givenAmount'] = newGivenAmount
+          ..['balanceDue'] = newBalanceDue
+          ..['returnAmount'] = newReturnAmount;
+
+        transaction.update(invoiceRef, updatedData);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order completed successfully!'), backgroundColor: Colors.green),
+      );
+      setState(() {});
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error completing order: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showPaymentDialog(DocumentSnapshot transactionDoc) {
+    final invoice = Invoice.fromMap(transactionDoc.id, transactionDoc.data() as Map<String, dynamic>);
+    final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+    TextEditingController amountReceivedController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 400,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: _surfaceColor,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 24)],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                children: [
+                  Center(
+                    child: Text('Complete Order Payment',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: _primaryColor)),
+                  ),
+                  Positioned(
+                    right: 0,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: _secondaryTextColor),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _buildPaymentDetailRow('Subtotal', '${invoice.subtotal.toStringAsFixed(0)}/-'),
+              const SizedBox(height: 12),
+              _buildPaymentDetailRow('Total After Discount', '${invoice.total.toStringAsFixed(0)}/-',
+                  valueColor: _primaryColor),
+              const SizedBox(height: 12),
+              _buildPaymentDetailRow('Paid Amount', '${numberFormat.format(invoice.givenAmount)}/-',
+                  valueColor: Colors.green),
+              const SizedBox(height: 12),
+              _buildPaymentDetailRow('Remaining Amount', '${numberFormat.format(invoice.balanceDue)}/-',
+                  valueColor: Colors.orange),
+              const SizedBox(height: 24),
+              TextFormField(
+                controller: amountReceivedController,
+                decoration: InputDecoration(
+                  labelText: 'Amount Received',
+                  prefixIcon: const Icon(Icons.payment, color: _primaryColor),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  filled: true,
+                  fillColor: _backgroundColor,
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                onChanged: (value) {
+                  // Optionally, you can add real-time feedback here if needed
+                },
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final additionalAmount = double.tryParse(amountReceivedController.text) ?? 0.0;
+                        final newTotalPaid = invoice.givenAmount + additionalAmount;
+
+                        if (additionalAmount <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter a valid amount!'), backgroundColor: Colors.red),
+                          );
+                          return;
+                        }
+
+                        if (newTotalPaid >= invoice.total) {
+                          await _completeOrder(transactionDoc, additionalAmount);
+                          Navigator.pop(context); // Close dialog after completion
+                          // Navigate to view the updated invoice
+                          final updatedInvoice = Invoice.fromMap(transactionDoc.id, (await transactionDoc.reference.get()).data() as Map<String, dynamic>);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => PointOfSalePage(invoice: updatedInvoice, isReadOnly: true)),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Total paid amount (${newTotalPaid.toStringAsFixed(0)}) must be at least the total amount (${invoice.total.toStringAsFixed(0)})!'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.check, color: Colors.white),
+                      label: const Text('Complete & Save', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentDetailRow(String label, String value, {Color? valueColor}) => Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: TextStyle(color: _secondaryTextColor)),
+        Text(value, style: TextStyle(color: valueColor ?? _textColor, fontWeight: FontWeight.bold))
+      ]);
 
   @override
   Widget build(BuildContext context) {
@@ -823,6 +986,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
     final total = invoice.total.toStringAsFixed(0);
     final pending = invoice.balanceDue.toStringAsFixed(0);
     final date = _formatDate(invoice.timestamp);
+    final isOrderBooking = invoice.type == 'Order Booking';
 
     return Container(
       height: 56,
@@ -841,7 +1005,16 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             Expanded(child: _DataCell(total)),
             Expanded(child: _DataCell(invoice.balanceDue > 0 ? pending : '', null, invoice.balanceDue > 0 ? 'Pending' : 'Paid', invoice.balanceDue > 0 ? Colors.red : Colors.green)),
             Expanded(child: _DataCell(date)),
-            Expanded(child: _ActionCell(transactionDoc, null, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _showPrintOptions)),
+            Expanded(
+              child: _ActionCell(
+                transactionDoc,
+                null, // No explicit width for desktop, using Expanded
+                onView: _viewTransaction,
+                onEdit: _editTransaction,
+                onPrint: _showPrintOptions,
+                onComplete: isOrderBooking ? () => _showPaymentDialog(transactionDoc) : null,
+              ),
+            ),
           ],
         ),
       ),
@@ -877,6 +1050,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
     final total = invoice.total.toStringAsFixed(0);
     final pending = invoice.balanceDue.toStringAsFixed(0);
     final date = _formatDate(invoice.timestamp);
+    final isOrderBooking = invoice.type == 'Order Booking';
 
     return Container(
       height: 56,
@@ -895,7 +1069,14 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             _DataCell(total, 150),
             _DataCell(invoice.balanceDue > 0 ? pending : '', 150, invoice.balanceDue > 0 ? 'Pending' : 'Paid', invoice.balanceDue > 0 ? Colors.red : Colors.green),
             _DataCell(date, 150),
-            _ActionCell(transactionDoc, 150, onView: _viewTransaction, onEdit: _editTransaction, onPrint: _showPrintOptions),
+            _ActionCell(
+              transactionDoc,
+              150, // Explicitly pass width for mobile layout
+              onView: _viewTransaction,
+              onEdit: _editTransaction,
+              onPrint: _showPrintOptions,
+              onComplete: isOrderBooking ? () => _showPaymentDialog(transactionDoc) : null,
+            ),
           ],
         ),
       ),
@@ -1110,11 +1291,13 @@ class _DataCell extends StatelessWidget {
 class _ActionCell extends StatelessWidget {
   final DocumentSnapshot transactionDoc;
   final double? width;
-  final Function(DocumentSnapshot) onView;
-  final Function(DocumentSnapshot) onEdit;
-  final Function(DocumentSnapshot) onPrint;
+  final Function(DocumentSnapshot)? onView;
+  final Function(DocumentSnapshot)? onEdit;
+  final Function(DocumentSnapshot)? onPrint;
+  final Function()? onComplete;
 
-  const _ActionCell(this.transactionDoc, this.width, {required this.onView, required this.onEdit, required this.onPrint});
+  const _ActionCell(this.transactionDoc, this.width,
+      {this.onView, this.onEdit, this.onPrint, this.onComplete});
 
   @override
   Widget build(BuildContext context) {
@@ -1123,9 +1306,18 @@ class _ActionCell extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          IconButton(icon: const Icon(Icons.remove_red_eye, color: Colors.blue, size: 20), onPressed: () => onView(transactionDoc), tooltip: 'View Transaction'),
-          IconButton(icon: const Icon(Icons.edit, color: _primaryColor, size: 20), onPressed: () => onEdit(transactionDoc), tooltip: 'Edit Transaction'),
-          IconButton(icon: const Icon(Icons.print, color: Colors.green, size: 20), onPressed: () => onPrint(transactionDoc), tooltip: 'Print Invoice'),
+          if (onView != null)
+            IconButton(icon: const Icon(Icons.remove_red_eye, color: Colors.blue, size: 20), onPressed: () => onView!(transactionDoc), tooltip: 'View Transaction'),
+          if (onEdit != null)
+            IconButton(icon: const Icon(Icons.edit, color: _primaryColor, size: 20), onPressed: () => onEdit!(transactionDoc), tooltip: 'Edit Transaction'),
+          if (onPrint != null)
+            IconButton(icon: const Icon(Icons.print, color: Colors.green, size: 20), onPressed: () => onPrint!(transactionDoc), tooltip: 'Print Invoice'),
+          if (onComplete != null)
+            IconButton(
+              icon: const Icon(Icons.check_circle, color: Colors.purple, size: 20),
+              onPressed: onComplete,
+              tooltip: 'Complete Order',
+            ),
         ],
       ),
     );

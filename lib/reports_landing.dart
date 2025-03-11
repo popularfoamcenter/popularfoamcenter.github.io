@@ -235,7 +235,10 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
             child: pw.Column(
               children: [
                 pw.Text('Thank you for your business with Popular Foam Center',
-                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD'))),
+                    style: pw.TextStyle(
+                        fontSize: 10,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#0D6EFD'))),
                 pw.SizedBox(height: 4),
                 pw.Text('Contact: 0302-9596046 | Facebook: Popular Foam Center',
                     style: const pw.TextStyle(fontSize: 9)),
@@ -281,12 +284,15 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                     alignment: pw.Alignment.center,
                     child: pw.Text(text,
                         textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(color: PdfColors.white, fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                        style: pw.TextStyle(
+                            color: PdfColors.white, fontSize: 10, fontWeight: pw.FontWeight.bold)),
                   )).toList(),
                 ),
                 ...printableItems.map((item) {
                   final qualityId = item['qualityId'];
-                  final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
+                  final discount =
+                      _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ??
+                          0;
                   final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
                   final stockValue = (item['stockQuantity'] * effectivePrice).toDouble();
                   return pw.TableRow(
@@ -295,50 +301,42 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['qualityName'],
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['itemName'],
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['covered'],
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['openingStock'].toString(),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(item['stockQuantity'].toString(),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(numberFormat.format(item['purchasePrice']),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text('$discount%',
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
                           child: pw.Text(numberFormat.format(stockValue),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10))),
+                              textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10))),
                     ],
                   );
                 }),
@@ -351,11 +349,9 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
                   pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                    pw.Text('Total Value:',
-                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('Total Value:', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
                     pw.SizedBox(width: 15),
-                    pw.Text(numberFormat.format(totalStockValue),
-                        style: const pw.TextStyle(fontSize: 10)),
+                    pw.Text(numberFormat.format(totalStockValue), style: const pw.TextStyle(fontSize: 10)),
                   ]),
                   pw.SizedBox(height: 15),
                   pw.Container(
@@ -371,8 +367,11 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                       children: [
                         pw.Text('TOTAL ITEMS',
                             style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                        pw.Text(totalStockQuantity.toStringAsFixed(0),  // Changed to show sum of quantities
-                            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD'))),
+                        pw.Text(totalStockQuantity.toStringAsFixed(0), // Changed to show sum of quantities
+                            style: pw.TextStyle(
+                                fontSize: 14,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromHex('#0D6EFD'))),
                       ],
                     ),
                   ),
@@ -387,8 +386,8 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
       await Printing.layoutPdf(onLayout: (_) => pdfBytes, name: 'PFC-Stock-Valuation');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Failed to print stock valuation report: $e'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to print stock valuation report: $e'), backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) {
@@ -418,7 +417,8 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
 
     final totalStockValue = _filteredItems.fold(0.0, (sum, item) {
       final qualityId = item['qualityId'];
-      final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
+      final discount =
+          _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
       final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
       return sum + (item['stockQuantity'] * effectivePrice);
     });
@@ -464,9 +464,25 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
               return Center(child: Text('No items found for this company', style: TextStyle(color: _textColor)));
             }
 
+            // Sort items by qualityName and then itemName
+            _filteredItems.sort((a, b) {
+              String aQuality = a['qualityName']?.toLowerCase() ?? '';
+              String bQuality = b['qualityName']?.toLowerCase() ?? '';
+              int qualityCompare = aQuality.compareTo(bQuality);
+
+              if (qualityCompare == 0) {
+                String aItem = a['itemName']?.toLowerCase() ?? '';
+                String bItem = b['itemName']?.toLowerCase() ?? '';
+                return aItem.compareTo(bItem);
+              }
+
+              return qualityCompare;
+            });
+
             double totalStockValue = _filteredItems.fold(0.0, (sum, item) {
               final qualityId = item['qualityId'];
-              final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
+              final discount =
+                  _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
               final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
               return sum + (item['stockQuantity'] * effectivePrice);
             });
@@ -534,9 +550,26 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
                     return Center(child: Text('No items found for this company', style: TextStyle(color: _textColor)));
                   }
 
+                  // Sort items by qualityName and then itemName
+                  _filteredItems.sort((a, b) {
+                    String aQuality = a['qualityName']?.toLowerCase() ?? '';
+                    String bQuality = b['qualityName']?.toLowerCase() ?? '';
+                    int qualityCompare = aQuality.compareTo(bQuality);
+
+                    if (qualityCompare == 0) {
+                      String aItem = a['itemName']?.toLowerCase() ?? '';
+                      String bItem = b['itemName']?.toLowerCase() ?? '';
+                      return aItem.compareTo(bItem);
+                    }
+
+                    return qualityCompare;
+                  });
+
                   double totalStockValue = _filteredItems.fold(0.0, (sum, item) {
                     final qualityId = item['qualityId'];
-                    final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
+                    final discount = _qualityDiscounts[qualityId]
+                    ?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ??
+                        0;
                     final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
                     return sum + (item['stockQuantity'] * effectivePrice);
                   });
@@ -626,7 +659,8 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
   Widget _buildDesktopRow(Map<String, dynamic> item) {
     int openingStock = (item['openingStock'] ?? 0).toInt();
     final qualityId = item['qualityId'];
-    final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
+    final discount =
+        _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
     final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
     double stockValue = (item['stockQuantity'] * effectivePrice).toDouble();
 
@@ -660,7 +694,8 @@ class _StockValuationReportPageState extends State<StockValuationReportPage> {
   Widget _buildMobileRow(Map<String, dynamic> item) {
     int openingStock = (item['openingStock'] ?? 0).toInt();
     final qualityId = item['qualityId'];
-    final discount = _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
+    final discount =
+        _qualityDiscounts[qualityId]?[item['covered'] == 'Yes' ? 'covered_discount' : 'uncovered_discount'] ?? 0;
     final effectivePrice = (item['purchasePrice'] * (1 - discount / 100)).toDouble();
     double stockValue = (item['stockQuantity'] * effectivePrice).toDouble();
 

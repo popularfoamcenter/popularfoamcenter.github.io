@@ -106,9 +106,7 @@ class _QualityPageState extends State<QualityPage> {
                     onPressed: () => Navigator.pop(context, false),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: const Text('Cancel',
                         style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
@@ -119,9 +117,7 @@ class _QualityPageState extends State<QualityPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: const Text('Delete',
                         style: TextStyle(color: _surfaceColor, fontSize: 14)),
@@ -278,8 +274,15 @@ class _QualityPageState extends State<QualityPage> {
           return Center(child: Text('No qualities found', style: const TextStyle(color: _textColor)));
         }
 
+        // Sort qualities alphabetically by name (case-insensitive)
+        qualities.sort((a, b) {
+          final aName = a['name'].toString().toLowerCase();
+          final bName = b['name'].toString().toLowerCase();
+          return aName.compareTo(bName);
+        });
+
         return ListView.separated(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemCount: qualities.length,
           itemBuilder: (context, index) => isDesktop
@@ -307,11 +310,12 @@ class _QualityPageState extends State<QualityPage> {
             Expanded(child: _DataCell(quality['company_name'])),
             Expanded(child: _DataCell('${quality['covered_discount']}%')),
             Expanded(child: _DataCell('${quality['uncovered_discount']}%')),
-            Expanded(child: _ActionCell(
-              quality,
-              onEdit: _showEditDialog,
-              onDelete: _deleteQuality,
-            )),
+            Expanded(
+                child: _ActionCell(
+                  quality,
+                  onEdit: _showEditDialog,
+                  onDelete: _deleteQuality,
+                )),
           ],
         ),
       ),
@@ -411,7 +415,8 @@ class _QualityPageState extends State<QualityPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Add Quality', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+              const Text('Add Quality',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
               const SizedBox(height: 20),
               TextFormField(
                 controller: _nameController,
@@ -428,10 +433,12 @@ class _QualityPageState extends State<QualityPage> {
                     value: _selectedCompany,
                     decoration: _inputDecoration('Company'),
                     dropdownColor: _surfaceColor,
-                    items: companies.map((company) => DropdownMenuItem(
+                    items: companies
+                        .map((company) => DropdownMenuItem(
                       value: company,
                       child: Text(company, style: const TextStyle(color: _textColor)),
-                    )).toList(),
+                    ))
+                        .toList(),
                     onChanged: (value) => setState(() => _selectedCompany = value),
                     style: const TextStyle(color: _textColor),
                   );
@@ -494,7 +501,8 @@ class _QualityPageState extends State<QualityPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Edit Quality', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
+              const Text('Edit Quality',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
               const SizedBox(height: 20),
               TextFormField(
                 controller: nameController,
@@ -511,10 +519,12 @@ class _QualityPageState extends State<QualityPage> {
                     value: selectedCompany,
                     decoration: _inputDecoration('Company'),
                     dropdownColor: _surfaceColor,
-                    items: companies.map((company) => DropdownMenuItem(
+                    items: companies
+                        .map((company) => DropdownMenuItem(
                       value: company,
                       child: Text(company, style: const TextStyle(color: _textColor)),
-                    )).toList(),
+                    ))
+                        .toList(),
                     onChanged: (value) => selectedCompany = value,
                     style: const TextStyle(color: _textColor),
                   );
@@ -594,11 +604,7 @@ class _HeaderCell extends StatelessWidget {
       child: Center(
         child: Text(
           text,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -619,7 +625,7 @@ class _DataCell extends StatelessWidget {
       child: Center(
         child: Text(
           text,
-          style: const TextStyle(color: Color(0xFF2D2D2D), fontSize: 14),
+          style: const TextStyle(color: _textColor, fontSize: 14),
           overflow: TextOverflow.ellipsis,
           maxLines: 1,
         ),
@@ -634,12 +640,7 @@ class _ActionCell extends StatelessWidget {
   final Function(DocumentSnapshot) onEdit;
   final Function(String) onDelete;
 
-  const _ActionCell(
-      this.quality, {
-        this.width,
-        required this.onEdit,
-        required this.onDelete,
-      });
+  const _ActionCell(this.quality, {this.width, required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -649,7 +650,7 @@ class _ActionCell extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
-            icon: const Icon(Icons.edit, color: Color(0xFF0D6EFD), size: 20),
+            icon: const Icon(Icons.edit, color: _primaryColor, size: 20),
             onPressed: () => onEdit(quality),
           ),
           IconButton(

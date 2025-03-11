@@ -48,6 +48,7 @@ dependencies:
   path_provider:
   file_saver:
   uuid:
+  flutter_animate:
   fl_chart:
   provider:
   url_launcher:
