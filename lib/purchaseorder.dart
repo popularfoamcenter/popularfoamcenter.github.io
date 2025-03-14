@@ -952,7 +952,8 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
-                          child: pw.Text(numberFormat.format(item.quantity * item.price),
+                          child: pw.Text(
+                              numberFormat.format(item.quantity * item.price * (1 - item.discount / 100)),
                               textAlign: pw.TextAlign.center,
                               style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
                     pw.Container(
@@ -1595,11 +1596,12 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
 
     setState(() => _isLoading = true);
 
+    // Save the order first
     final orderData = {
       'company_name': widget.companyName,
       'vehicle_name': widget.vehicleName,
       'vehicle_size': widget.vehicleSize,
-      'order_date': _orderDateController.text,
+      'order_date': Timestamp.fromDate(DateFormat('dd-MM-yyyy').parse(_orderDateController.text)),
       'tax_percentage': double.tryParse(_taxController.text) ?? 0.5,
       'subtotal': _subtotal,
       'tax_amount': _total - _subtotal,
@@ -1616,37 +1618,41 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
       } else {
         await _firestore.collection('purchase_orders').add(orderData);
       }
-      await _printPurchaseOrder(orderData); // Print without popping immediately
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order saved and printed successfully!')),
-      );
+
+      await _printPurchaseOrder(); // Changed to not pass orderData
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved and printed successfully!')));
     } catch (e) {
-      print('Error in _printAndSaveOrder: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _isLoading = false);
-      // Do not pop here; let the user decide to leave the screen
     }
   }
+  Future<void> _printPurchaseOrder() async {
+    if (!_formKey.currentState!.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please complete all required fields')));
+      return;
+    }
+    if (_items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one item')));
+      return;
+    }
 
-  Future<void> _printPurchaseOrder(Map<String, dynamic> orderData) async {
+    setState(() => _isLoading = true);
     try {
       final comments = await _showPrintOptionsDialog();
-      if (comments == null) return;
+      if (comments == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
       final bool withValuation = comments['withValuation'] as bool;
       final Map<String, String> itemComments = comments['comments'] as Map<String, String>;
+
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
       final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
-
-      DateTime orderDate;
-      try {
-        orderDate = DateFormat('dd-MM-yyyy').parse(orderData['order_date'] as String);
-      } catch (e) {
-        print('Error parsing date: $e');
-        orderDate = DateTime.now();
-      }
+      DateTime orderDate = DateFormat('dd-MM-yyyy').parse(_orderDateController.text);
 
       pdf.addPage(
         pw.MultiPage(
@@ -1690,7 +1696,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                               fontWeight: pw.FontWeight.bold,
                               fontSize: 12,
                               color: PdfColors.black)),
-                      pw.Text(orderData['company_name'] ?? 'N/A',
+                      pw.Text(widget.companyName ?? 'N/A',
                           style: const pw.TextStyle(fontSize: 14, color: PdfColors.black)),
                       pw.SizedBox(height: 8),
                       pw.Text('Order Date:',
@@ -1711,7 +1717,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                               fontWeight: pw.FontWeight.bold,
                               fontSize: 12,
                               color: PdfColors.black)),
-                      pw.Text(orderData['vehicle_name'] ?? 'N/A',
+                      pw.Text(widget.vehicleName ?? 'N/A',
                           style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
                     ],
                   ),
@@ -1824,7 +1830,8 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       pw.Container(
                           padding: const pw.EdgeInsets.all(8),
                           alignment: pw.Alignment.center,
-                          child: pw.Text(numberFormat.format(item.quantity * item.price),
+                          child: pw.Text(
+                              numberFormat.format(item.quantity * item.price * (1 - item.discount / 100)),
                               textAlign: pw.TextAlign.center,
                               style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
                     pw.Container(
@@ -1848,21 +1855,21 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                       pw.Text('Subtotal:',
                           style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
                       pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(orderData['subtotal'] ?? 0),
+                      pw.Text(numberFormat.format(_subtotal),
                           style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
                     ]),
                     pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Tax (${orderData['tax_percentage'] ?? '0'}%):',
+                      pw.Text('Tax (${_taxController.text}%):',
                           style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
                       pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(orderData['tax_amount'] ?? 0),
+                      pw.Text(numberFormat.format(_total - _subtotal),
                           style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
                     ]),
                     pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
                       pw.Text('Total Amount:',
                           style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
                       pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(orderData['total_after_tax'] ?? 0),
+                      pw.Text(numberFormat.format(_total),
                           style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
                     ]),
                   ],
