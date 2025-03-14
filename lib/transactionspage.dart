@@ -417,9 +417,21 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
           ? (invoice.timestamp as Timestamp).toDate()
           : DateTime.now();
 
+      // Estimate height for dynamic content
+      const double baseHeight = 70; // Base height for header and fixed elements (in mm)
+      const double itemHeight = 8; // Approx height per item row (in mm, including padding)
+      const double totalLines = 5; // Max lines for totals section
+      const double totalHeight = 15; // Height for totals section (in mm)
+      const double footerHeight = 15; // Height for footer (approx 4 lines + spacing, in mm)
+      final double dynamicHeight = baseHeight + (invoice.items.length * itemHeight) + totalHeight + footerHeight; // Total height in mm
+
       pdf.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 5 * PdfPageFormat.mm),
+          pageFormat: PdfPageFormat(
+            80 * PdfPageFormat.mm, // Width: 80mm
+            dynamicHeight * PdfPageFormat.mm, // Height: dynamic based on content
+            marginAll: 5 * PdfPageFormat.mm, // 5mm margins
+          ),
           theme: pw.ThemeData.withFont(
             base: await PdfGoogleFonts.robotoRegular(),
             bold: await PdfGoogleFonts.robotoBold(),
@@ -602,7 +614,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               pw.SizedBox(height: 8),
               pw.Divider(thickness: 1, color: PdfColor.fromHex('#0D6EFD')),
 
-              // Footer
+              // Footer (exactly as in original _print800)
               pw.Text(
                 'Thank You!',
                 style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD')),
