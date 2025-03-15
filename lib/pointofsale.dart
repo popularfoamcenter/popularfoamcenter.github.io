@@ -7,7 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
-import 'transactionspage.dart';
+import 'transactionspage.dart'; // Assuming this is the file containing TransactionsPage
 
 class CartItem {
   final String quality;
@@ -196,8 +196,11 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   void initState() {
     super.initState();
     _initializeState();
-    _selectedDate = DateTime.now();
-    _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
+    // Only set default date if not editing an invoice
+    if (widget.invoice == null) {
+      _selectedDate = DateTime.now();
+      _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -236,9 +239,10 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _phoneController.text = _selectedCustomer['number'] ?? '';
       _customCustomerNameController.text = _selectedCustomer['name'] ?? '';
       _useCustomName = _selectedCustomer['id']?.isEmpty ?? true;
+      // Preserve original date when editing
       _selectedDate = widget.invoice!.timestamp is Timestamp
           ? (widget.invoice!.timestamp as Timestamp).toDate()
-          : DateTime.now();
+          : DateTime.now(); // Fallback only if timestamp is invalid
       _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
@@ -465,18 +469,15 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       final qtyChange = item.qty - item.originalQty;
 
       if (qtyChange != 0) {
-        // If transaction type changed, reverse the original stock adjustment
         if (originalType != _selectedTransactionType) {
           final originalQtyChange = item.originalQty;
           final originalAdjustment = originalType == 'Return' ? originalQtyChange : -originalQtyChange;
-          final newStockAfterRevert = stock + originalAdjustment; // Revert original change
-          // Apply new adjustment based on new transaction type
+          final newStockAfterRevert = stock + originalAdjustment;
           final newAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
           final newStock = newStockAfterRevert + newAdjustment;
           if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName} after type change');
           transaction.update(ref, {'stockQuantity': newStock});
         } else {
-          // If type unchanged, apply adjustment based on current type
           final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
           if (newStock < 0) throw Exception('Insufficient stock for ${item.itemName}');
           transaction.update(ref, {'stockQuantity': newStock});
@@ -516,13 +517,11 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           final ref = snapshot.docs.first.reference;
           final currentStock = (snapshot.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
 
-          // Special handling for Order Booking to Sale conversion
           if (originalType == 'Order Booking' && _selectedTransactionType == 'Sale') {
-            final newStock = currentStock - newItem.qty; // Deduct full new qty as sale fulfillment
+            final newStock = currentStock - newItem.qty;
             if (newStock < 0) throw Exception('Insufficient stock for ${newItem.itemName} after converting to Sale');
             transaction.update(ref, {'stockQuantity': newStock});
           } else if (originalType != _selectedTransactionType) {
-            // Handle other type changes (e.g., Sale to Return, Return to Sale)
             final originalQtyChange = oldItem.qty;
             final originalAdjustment = originalType == 'Return' ? originalQtyChange : -originalQtyChange;
             final stockAfterRevert = currentStock + originalAdjustment;
@@ -531,7 +530,6 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             if (newStock < 0) throw Exception('Insufficient stock for ${newItem.itemName} after type change');
             transaction.update(ref, {'stockQuantity': newStock});
           } else {
-            // If type unchanged, apply adjustment based on current type
             final stockAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
             final newStock = currentStock + stockAdjustment;
             if (newStock < 0) throw Exception('Insufficient stock for ${newItem.itemName}');
@@ -599,7 +597,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     final subtotal = _calculateSubtotal();
     final total = _calculateTotal();
     final givenAmount = double.tryParse(_givenAmountController.text) ?? 0.0;
-    final originalType = widget.invoice?.type ?? _selectedTransactionType; // Store original type
+    final originalType = widget.invoice?.type ?? _selectedTransactionType;
 
     final isEditing = widget.invoice != null;
     final invoiceRef = isEditing
@@ -637,7 +635,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: givenAmount,
           returnAmount: math.max(givenAmount - total, 0),
           balanceDue: math.max(total - givenAmount, 0),
-          timestamp: Timestamp.fromDate(_selectedDate),
+          timestamp: Timestamp.fromDate(_selectedDate), // Use original or user-modified date
         );
 
         if (isEditing) {
@@ -664,7 +662,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           givenAmount: invoice.givenAmount,
           returnAmount: invoice.returnAmount,
           balanceDue: invoice.balanceDue,
-          timestamp: Timestamp.fromDate(_selectedDate),
+          timestamp: Timestamp.fromDate(_selectedDate), // Use original or user-modified date
         );
         await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
         finalInvoice = updatedInvoice;
@@ -1508,7 +1506,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       value: _selectedTransactionType,
       items: ['Sale', 'Return', 'Order Booking']
           .map((type) => DropdownMenuItem(
-          value: type, child: Text(type, style: TextStyle(color: _textColor, fontSize: 14))))
+          value: type,
+          child: Text(type, style: TextStyle(color: _textColor, fontSize: 14))))
           .toList(),
       onChanged: (value) async {
         if (value == 'Return') {
@@ -1560,7 +1559,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         _buildSummaryItem('Global Discount', _globalDiscount.toString() + '/-'),
         const Divider(),
         _buildSummaryItem('Total', _calculateTotal().toStringAsFixed(0) + '/-',
-            valueStyle: TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
+            valueStyle:
+            TextStyle(color: _primaryColor, fontWeight: FontWeight.bold, fontSize: 18)),
       ]));
 
   Widget _buildSummaryItem(String label, String value, {TextStyle? valueStyle}) => Padding(
@@ -1594,7 +1594,8 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               children: [
                 Center(
                   child: Text('Payment Details',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _primaryColor)),
+                      style:
+                      TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _primaryColor)),
                 ),
                 Positioned(
                   right: 0,
@@ -1813,8 +1814,10 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                 child: Text('${(item['salePrice'] as num?)?.toStringAsFixed(0) ?? '0'}',
                     style: TextStyle(color: _textColor), textAlign: TextAlign.center)),
             Expanded(
-                child: Text((item['stockQuantity'] as num?)?.toDouble().toStringAsFixed(0) ?? '0.00',
-                    style: TextStyle(color: _textColor), textAlign: TextAlign.center))
+                child: Text(
+                    (item['stockQuantity'] as num?)?.toDouble().toStringAsFixed(0) ?? '0.00',
+                    style: TextStyle(color: _textColor),
+                    textAlign: TextAlign.center))
           ])));
 
   @override

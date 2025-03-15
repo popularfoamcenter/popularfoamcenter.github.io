@@ -108,12 +108,13 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       if (dateValue is Timestamp) {
         date = dateValue.toDate();
       } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
+        date = DateFormat('dd-MM-yyyy').parse(dateValue); // Parse the string if it was stored as text
       } else if (dateValue is DateTime) {
         date = dateValue;
       } else {
-        date = DateTime.fromMillisecondsSinceEpoch(
-            dateValue?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch);
+        // Log unexpected type and use a fallback
+        print('Unexpected date type: ${dateValue.runtimeType}');
+        date = DateTime.now(); // Fallback, but this should rarely happen now
       }
       return DateFormat('dd-MM-yyyy').format(date);
     } catch (e) {
@@ -1407,7 +1408,6 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
       ],
     ),
   );
-
   Widget _buildTextField(String label, String value) => TextFormField(
     controller: TextEditingController(text: value),
     readOnly: true,
@@ -1512,6 +1512,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
   );
 }
 // Add/Edit Purchase Items Page
+
 class AddPurchaseItemsPage extends StatefulWidget {
   final String companyName;
   final String vehicleName;
@@ -1548,9 +1549,8 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
   late AnimationController _controller;
   late Animation<double> _animation;
   final TextEditingController _searchController = TextEditingController();
-
-  // FocusNode for keyboard listener
   final FocusNode _focusNode = FocusNode();
+  String _searchQuery = '';
 
   // Color Scheme
   Color get _primaryColor => const Color(0xFF0D6EFD);
@@ -1564,29 +1564,200 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
     _animation = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-    if (widget.existingOrder != null) _initializeExistingOrder();
-    else {
-      _orderDateController.text = DateFormat('dd-MM-yyyy').format(DateTime.now());
-      _taxController.text = '0.5';
-    }
     _controller.forward();
 
-    // Request focus for the keyboard listener when the widget initializes
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
-    });
+    // Initialize order date
+    if (widget.existingOrder != null) {
+      _initializeExistingOrder();
+    } else {
+      _orderDateController.text = DateFormat('dd-MM-yyyy').format(DateTime.now()); // Default to today for new orders
+      _taxController.text = '0.5'; // Default tax percentage for new orders
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _searchController.dispose();
     _orderDateController.dispose();
     _taxController.dispose();
     _itemsScrollController.dispose();
+    _controller.dispose();
+    _searchController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
+
+  Future<void> _initializeExistingOrder() async {
+    setState(() => _isLoading = true);
+    final order = widget.existingOrder!;
+
+    // Set the order date from existing order
+    _orderDateController.text = _formatDate(order['order_date'] ?? DateTime.now());
+    _taxController.text = order['tax_percentage']?.toString() ?? '0.5';
+
+    final itemsList = order['items'] as List<dynamic>? ?? [];
+    for (var item in itemsList) {
+      try {
+        final orderItem = OrderItem(
+          itemId: item['itemId'] ?? '',
+          name: item['name'] ?? 'Unknown',
+          quality: item['quality'] ?? 'N/A',
+          packagingUnit: item['packagingUnit'] ?? 'Unit',
+          quantity: item['quantity'] is int ? item['quantity'] : int.tryParse(item['quantity']?.toString() ?? '0') ?? 0,
+          price: (item['price'] as num?)?.toDouble() ?? 0.0,
+          discount: (item['discount'] as num?)?.toDouble() ?? 0.0,
+          covered: item['covered']?.toString() ?? "No",
+          size: item['size'] is int ? item['size'] : int.tryParse(item['size']?.toString() ?? '0') ?? 0,
+        );
+        orderItem.stockQuantity = await _fetchStockQuantity(orderItem.itemId);
+        _items.add(orderItem);
+      } catch (e) {
+        print('Error initializing item: $e');
+      }
+    }
+
+    setState(() {
+      _calculateTotal();
+      _isLoading = false;
+    });
+  }
+
+  String _formatDate(dynamic dateValue) {
+    try {
+      DateTime date;
+      if (dateValue is Timestamp) {
+        date = dateValue.toDate();
+      } else if (dateValue is String) {
+        date = DateFormat('dd-MM-yyyy').parse(dateValue);
+      } else if (dateValue is DateTime) {
+        date = dateValue;
+      } else {
+        print('Unexpected date type: ${dateValue.runtimeType}');
+        date = DateTime.now(); // Fallback
+      }
+      return DateFormat('dd-MM-yyyy').format(date);
+    } catch (e) {
+      print('Error parsing date: $e');
+      return DateFormat('dd-MM-yyyy').format(DateTime.now());
+    }
+  }
+
+  Future<int> _fetchStockQuantity(String itemId) async {
+    try {
+      final doc = await _firestore.collection('items').doc(itemId).get();
+      final data = doc.data();
+      return data?['stockQuantity'] is int ? data!['stockQuantity'] : int.tryParse(data?['stockQuantity']?.toString() ?? '0') ?? 0;
+    } catch (e) {
+      print('Error fetching stock quantity: $e');
+      return 0;
+    }
+  }
+
+  Future<void> _addItem(Item item) async {
+    setState(() => _isLoading = true);
+    try {
+      final qualitySnapshot = await _firestore.collection('qualities').where('name', isEqualTo: item.quality).limit(1).get();
+      if (qualitySnapshot.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Quality not found')));
+        return;
+      }
+
+      final qualityData = qualitySnapshot.docs.first.data() as Map<String, dynamic>;
+      final discount = (item.covered.toLowerCase() == "yes") ? (qualityData['covered_discount'] ?? 0.0).toDouble() : (qualityData['uncovered_discount'] ?? 0.0).toDouble();
+
+      final doc = await _firestore.collection('items').doc(item.id).get();
+      if (!doc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item not found')));
+        return;
+      }
+
+      final itemData = doc.data() as Map<String, dynamic>;
+      final length = (itemData['length'] as num?)?.toInt() ?? 0;
+      final width = (itemData['width'] as num?)?.toInt() ?? 0;
+      final height = (itemData['height'] as num?)?.toInt() ?? 0;
+      final size = length * width * height;
+      final stockQuantity = itemData['stockQuantity'] is int ? itemData['stockQuantity'] : int.tryParse(itemData['stockQuantity']?.toString() ?? '0') ?? 0;
+
+      setState(() {
+        _items.add(OrderItem(
+          itemId: item.id,
+          name: item.name,
+          quality: item.quality,
+          packagingUnit: item.packagingUnit,
+          quantity: 1,
+          price: item.purchasePrice,
+          discount: discount,
+          covered: item.covered,
+          size: size,
+          stockQuantity: stockQuantity,
+        ));
+        _calculateTotal();
+        _searchController.clear();
+        _searchQuery = '';
+      });
+      Navigator.pop(context);
+    } catch (e) {
+      print('Error adding item: $e');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add item')));
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _calculateTotal() {
+    _subtotal = _items.fold(0.0, (sum, item) => sum + (item.quantity * item.price * (1 - item.discount / 100)));
+    final tax = _subtotal * (double.tryParse(_taxController.text) ?? 0.0) / 100;
+    _total = _subtotal + tax;
+  }
+
+  Future<void> _submitOrder() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one item')));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // Parse the date string from _orderDateController into a DateTime
+    DateTime parsedDate;
+    try {
+      parsedDate = DateFormat('dd-MM-yyyy').parse(_orderDateController.text);
+    } catch (e) {
+      parsedDate = DateTime.now();
+      print('Error parsing date: $e');
+    }
+
+    final orderData = {
+      'company_name': widget.companyName,
+      'vehicle_name': widget.vehicleName,
+      'vehicle_size': widget.vehicleSize,
+      'order_date': Timestamp.fromDate(parsedDate), // Store as Timestamp
+      'tax_percentage': double.tryParse(_taxController.text) ?? 0.5,
+      'subtotal': _subtotal,
+      'tax_amount': _total - _subtotal,
+      'total_after_tax': _total,
+      'total_quantity': _items.fold(0, (sum, item) => sum + item.quantity),
+      'total_occupied_space': _items.fold(0, (sum, item) => sum + item.size * item.quantity),
+      'items': _items.map((item) => item.toMap()).toList(),
+      'created_at': FieldValue.serverTimestamp(),
+    };
+
+    try {
+      if (widget.orderId != null) {
+        await _firestore.collection('purchase_orders').doc(widget.orderId).update(orderData);
+      } else {
+        await _firestore.collection('purchase_orders').add(orderData);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved successfully!')));
+      Navigator.pop(context);
+    } catch (e) {
+      print('Error saving order: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving order: $e')));
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _printAndSaveOrder() async {
     if (!_formKey.currentState!.validate()) return;
     if (_items.isEmpty) {
@@ -1596,12 +1767,29 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
 
     setState(() => _isLoading = true);
 
-    // Save the order first
+    final comments = await _showPrintOptionsDialog();
+    if (comments == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    final bool withValuation = comments['withValuation'] as bool;
+    final Map<String, String> itemComments = comments['comments'] as Map<String, String>;
+
+    // Parse the date string from _orderDateController into a DateTime
+    DateTime parsedDate;
+    try {
+      parsedDate = DateFormat('dd-MM-yyyy').parse(_orderDateController.text);
+    } catch (e) {
+      parsedDate = DateTime.now();
+      print('Error parsing date: $e');
+    }
+
     final orderData = {
       'company_name': widget.companyName,
       'vehicle_name': widget.vehicleName,
       'vehicle_size': widget.vehicleSize,
-      'order_date': Timestamp.fromDate(DateFormat('dd-MM-yyyy').parse(_orderDateController.text)),
+      'order_date': Timestamp.fromDate(parsedDate), // Store as Timestamp
       'tax_percentage': double.tryParse(_taxController.text) ?? 0.5,
       'subtotal': _subtotal,
       'tax_amount': _total - _subtotal,
@@ -1619,40 +1807,9 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
         await _firestore.collection('purchase_orders').add(orderData);
       }
 
-      await _printPurchaseOrder(); // Changed to not pass orderData
-
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved and printed successfully!')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-  Future<void> _printPurchaseOrder() async {
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please complete all required fields')));
-      return;
-    }
-    if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one item')));
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      final comments = await _showPrintOptionsDialog();
-      if (comments == null) {
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      final bool withValuation = comments['withValuation'] as bool;
-      final Map<String, String> itemComments = comments['comments'] as Map<String, String>;
-
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
       final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
-      DateTime orderDate = DateFormat('dd-MM-yyyy').parse(_orderDateController.text);
 
       pdf.addPage(
         pw.MultiPage(
@@ -1704,7 +1861,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                               fontWeight: pw.FontWeight.bold,
                               fontSize: 12,
                               color: PdfColors.black)),
-                      pw.Text(DateFormat('dd-MM-yyyy').format(orderDate),
+                      pw.Text(DateFormat('dd-MM-yyyy').format(parsedDate),
                           style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
                     ],
                   ),
@@ -1904,17 +2061,19 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
         onLayout: (_) => pdfBytes,
         name: 'PFC-PO',
       );
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved and printed successfully!')));
+      Navigator.pop(context);
     } catch (e) {
-      print('Error in _printPurchaseOrder: $e');
+      print('Error in _printAndSaveOrder: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to print purchase order: $e'),
+          content: Text('Failed to print and save order: $e'),
           backgroundColor: Colors.red));
     } finally {
       setState(() => _isLoading = false);
-      Navigator.pop(context);
     }
   }
-  // Copied from ViewPurchaseOrderPage with slight adjustments
+
   Future<Map<String, dynamic>?> _showPrintOptionsDialog() async {
     bool withValuation = true;
     final Map<String, TextEditingController> commentControllers = {};
@@ -2017,160 +2176,6 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
         ),
       ),
     );
-  }
-  Future<void> _initializeExistingOrder() async {
-    setState(() => _isLoading = true);
-    final order = widget.existingOrder!;
-    _orderDateController.text = _formatDate(order['order_date'] ?? DateTime.now());
-    _taxController.text = order['tax_percentage']?.toString() ?? '0.5';
-
-    final itemsList = order['items'] as List<dynamic>? ?? [];
-    for (var item in itemsList) {
-      try {
-        final orderItem = OrderItem(
-          itemId: item['itemId'] ?? '',
-          name: item['name'] ?? 'Unknown',
-          quality: item['quality'] ?? 'N/A',
-          packagingUnit: item['packagingUnit'] ?? 'Unit',
-          quantity: item['quantity'] is int ? item['quantity'] : int.tryParse(item['quantity']?.toString() ?? '0') ?? 0,
-          price: (item['price'] as num?)?.toDouble() ?? 0.0,
-          discount: (item['discount'] as num?)?.toDouble() ?? 0.0,
-          covered: item['covered']?.toString() ?? "No",
-          size: item['size'] is int ? item['size'] : int.tryParse(item['size']?.toString() ?? '0') ?? 0,
-        );
-        orderItem.stockQuantity = await _fetchStockQuantity(orderItem.itemId);
-        _items.add(orderItem);
-      } catch (e) {
-        print('Error initializing item: $e');
-      }
-    }
-
-    setState(() {
-      _calculateTotal();
-      _isLoading = false;
-    });
-  }
-
-  String _formatDate(dynamic dateValue) {
-    try {
-      DateTime date;
-      if (dateValue is Timestamp) date = dateValue.toDate();
-      else if (dateValue is String) date = DateTime.parse(dateValue);
-      else if (dateValue is DateTime) date = dateValue;
-      else date = DateTime.fromMillisecondsSinceEpoch(dateValue?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch);
-      return DateFormat('dd-MM-yyyy').format(date);
-    } catch (e) {
-      print('Error parsing date: $e');
-      return DateFormat('dd-MM-yyyy').format(DateTime.now());
-    }
-  }
-
-  Future<int> _fetchStockQuantity(String itemId) async {
-    try {
-      final doc = await _firestore.collection('items').doc(itemId).get();
-      final data = doc.data();
-      return data?['stockQuantity'] is int ? data!['stockQuantity'] : int.tryParse(data?['stockQuantity']?.toString() ?? '0') ?? 0;
-    } catch (e) {
-      print('Error fetching stock quantity: $e');
-      return 0;
-    }
-  }
-
-  Future<void> _addItem(Item item) async {
-    setState(() => _isLoading = true);
-    try {
-      final qualitySnapshot = await _firestore.collection('qualities').where('name', isEqualTo: item.quality).limit(1).get();
-      if (qualitySnapshot.docs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Quality not found')));
-        return;
-      }
-
-      final qualityData = qualitySnapshot.docs.first.data() as Map<String, dynamic>;
-      final discount = (item.covered.toLowerCase() == "yes") ? (qualityData['covered_discount'] ?? 0.0).toDouble() : (qualityData['uncovered_discount'] ?? 0.0).toDouble();
-
-      final doc = await _firestore.collection('items').doc(item.id).get();
-      if (!doc.exists) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item not found')));
-        return;
-      }
-
-      final itemData = doc.data() as Map<String, dynamic>;
-      final length = (itemData['length'] as num?)?.toInt() ?? 0;
-      final width = (itemData['width'] as num?)?.toInt() ?? 0;
-      final height = (itemData['height'] as num?)?.toInt() ?? 0;
-      final size = length * width * height;
-      final stockQuantity = itemData['stockQuantity'] is int ? itemData['stockQuantity'] : int.tryParse(itemData['stockQuantity']?.toString() ?? '0') ?? 0;
-
-      setState(() {
-        _items.add(OrderItem(
-          itemId: item.id,
-          name: item.name,
-          quality: item.quality,
-          packagingUnit: item.packagingUnit,
-          quantity: 1,
-          price: item.purchasePrice,
-          discount: discount,
-          covered: item.covered,
-          size: size,
-          stockQuantity: stockQuantity,
-        ));
-        _calculateTotal();
-        _searchController.clear();
-        _searchQuery = '';
-      });
-      Navigator.pop(context);
-    } catch (e) {
-      print('Error adding item: $e');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to add item')));
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  void _calculateTotal() {
-    _subtotal = _items.fold(0.0, (sum, item) => sum + (item.quantity * item.price * (1 - item.discount / 100)));
-    final tax = _subtotal * (double.tryParse(_taxController.text) ?? 0.0) / 100;
-    _total = _subtotal + tax;
-  }
-
-  Future<void> _submitOrder() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one item')));
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    final orderData = {
-      'company_name': widget.companyName,
-      'vehicle_name': widget.vehicleName,
-      'vehicle_size': widget.vehicleSize,
-      'order_date': _orderDateController.text,
-      'tax_percentage': double.tryParse(_taxController.text) ?? 0.5,
-      'subtotal': _subtotal,
-      'tax_amount': _total - _subtotal,
-      'total_after_tax': _total,
-      'total_quantity': _items.fold(0, (sum, item) => sum + item.quantity),
-      'total_occupied_space': _items.fold(0, (sum, item) => sum + item.size * item.quantity),
-      'items': _items.map((item) => item.toMap()).toList(),
-      'created_at': FieldValue.serverTimestamp(),
-    };
-
-    try {
-      if (widget.orderId != null) {
-        await _firestore.collection('purchase_orders').doc(widget.orderId).update(orderData);
-      } else {
-        await _firestore.collection('purchase_orders').add(orderData);
-      }
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved successfully!')));
-      Navigator.pop(context);
-    } catch (e) {
-      print('Error saving order: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saving order: $e')));
-    } finally {
-      setState(() => _isLoading = false);
-    }
   }
 
   @override
@@ -2454,7 +2459,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
               child: ElevatedButton.icon(
                 onPressed: _isLoading ? null : _printAndSaveOrder,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green, // Different color to distinguish from Save
+                  backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 56),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2469,6 +2474,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
       ],
     ),
   );
+
   Widget _buildTextField(String label, TextEditingController controller, {bool isNumeric = false, bool enabled = true, void Function(String)? onChanged}) => TextFormField(
     controller: controller,
     style: TextStyle(color: _textColor, fontSize: 14),
@@ -2622,8 +2628,6 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     );
   }
 
-  String _searchQuery = '';
-
   Widget _buildInventoryHeader() => Container(
     padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
     decoration: BoxDecoration(
@@ -2712,7 +2716,6 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     if (pickedDate != null) setState(() => controller.text = DateFormat('dd-MM-yyyy').format(pickedDate));
   }
 }
-
 // Helper Components
 class CompanyVehicleSelectionDialog extends StatefulWidget {
   final bool isDarkMode;
