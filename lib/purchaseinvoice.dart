@@ -1106,19 +1106,31 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   flex: 1,
                   child: Center(
                       child: TextFormField(
-                        initialValue: item.discount.toStringAsFixed(0),
+                        initialValue: item.discount % 1 == 0
+                            ? item.discount.toStringAsFixed(0) // Show as integer if whole number
+                            : item.discount.toStringAsFixed(1), // Show 1 decimal if not whole
                         textAlign: TextAlign.center,
                         style: TextStyle(color: _textColor, fontSize: 14),
                         decoration: const InputDecoration(
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.zero,
                         ),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                          TextInputFormatter.withFunction((oldValue, newValue) {
+                            final text = newValue.text;
+                            // Allow only one decimal point and up to 2 decimal places
+                            if (text.contains('.') && text.split('.')[1].length > 2) {
+                              return oldValue;
+                            }
+                            return newValue;
+                          }),
+                        ],
                         onChanged: (value) {
                           if (value.isNotEmpty) {
                             setState(() {
-                              item.discount = double.parse(value);
+                              item.discount = double.tryParse(value) ?? 0.0;
                               _calculateTotal();
                             });
                           }

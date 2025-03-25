@@ -152,68 +152,122 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
     try {
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+
+      // Load the logo image before building the PDF
+      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
+
       DateTime invoiceDate = invoice.timestamp is Timestamp
           ? (invoice.timestamp as Timestamp).toDate()
           : DateTime.now();
 
-      // Batch fetch packaging units
+      // Fetch packaging units from Firestore
       final Map<String, String> packagingUnits = {};
-      final itemKeys = invoice.items.map((item) => '${item.itemName}-${item.quality}').toSet().toList();
-      if (itemKeys.isNotEmpty) {
-        final uniqueItemNames = itemKeys.map((key) => key.split('-')[0]).toSet().toList();
-        // Split into batches of 10 due to Firestore 'whereIn' limit
-        for (int i = 0; i < uniqueItemNames.length; i += 10) {
-          final batch = uniqueItemNames.sublist(i, i + 10 > uniqueItemNames.length ? uniqueItemNames.length : i + 10);
+      if (invoice.items.isNotEmpty) {
+        for (final item in invoice.items) {
+          final itemName = item.itemName?.trim() ?? 'Unknown';
+          final quality = item.quality?.trim() ?? 'Unknown';
+          final key = '$itemName-$quality';
+
+          // Query Firestore for the specific itemName and qualityName pair
           final querySnapshot = await FirebaseFirestore.instance
               .collection('items')
-              .where('itemName', whereIn: batch)
+              .where('itemName', isEqualTo: itemName)
+              .where('qualityName', isEqualTo: quality)
+              .limit(1)
               .get();
-          for (var doc in querySnapshot.docs) {
-            final data = doc.data();
-            final key = '${data['itemName']}-${data['qualityName']}';
-            packagingUnits[key] = data['packagingUnit'] ?? 'Unit';
+
+          if (querySnapshot.docs.isNotEmpty) {
+            final data = querySnapshot.docs.first.data();
+            String unit = data['packagingUnit']?.toString() ?? 'Unit';
+            packagingUnits[key] = unit == 'Pieces' ? 'pcs' : unit;
+          } else {
+            // Fallback only if no matching document is found
+            packagingUnits[key] = 'Unit';
           }
         }
       }
-      // Fill in defaults for missing items
-      for (final item in invoice.items) {
-        packagingUnits.putIfAbsent('${item.itemName}-${item.quality}', () => 'Unit');
-      }
 
-      // Sort items asynchronously
       final sortedItems = await compute(sortItems, invoice.items);
 
-      // Debug print to verify sorting
-      print('Original Items:');
-      for (var item in invoice.items) {
-        print('${item.quality} - ${item.itemName}');
-      }
-      print('Sorted Items:');
-      for (var item in sortedItems) {
-        print('${item.quality} - ${item.itemName}');
-      }
-
-      // Build items table rows with sorted items
       final List<pw.TableRow> itemTableRows = [
         pw.TableRow(
           decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
           children: [
-            'Sr No',
-            'Description',
-            'Pack Unit',
-            'Qty',
-            'Unit Price',
-            'Disc.%',
-            'Total',
-          ].map((text) => pw.Container(
-            padding: const pw.EdgeInsets.all(5),
-            alignment: text == 'Description' ? pw.Alignment.centerLeft : pw.Alignment.center,
-            child: pw.Text(text,
-                style: pw.TextStyle(
-                    color: PdfColors.white,
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold)),
-          )).toList(),
+            pw.Container(
+              width: 30,
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Sr#',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Text('Description',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              width: 50,
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Cvrd',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Pkg',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Qty',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Unit Price',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Disc.%',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Total',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+          ],
         ),
         ...sortedItems.asMap().entries.map((entry) {
           final int index = entry.key + 1;
@@ -224,6 +278,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
           return pw.TableRow(
             children: [
               pw.Container(
+                  width: 30,
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.center,
                   child: pw.Text(index.toString(),
@@ -232,6 +287,12 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text('${item.quality}   ${item.itemName}',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  width: 50,
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(item.covered ?? '-',
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
@@ -263,7 +324,6 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         }),
       ];
 
-      // Build totals table rows
       final List<pw.TableRow> totalsTableRows = [
         pw.TableRow(
           children: [
@@ -363,7 +423,10 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(25),
-          theme: pw.ThemeData.withFont(base: baseFont, bold: boldFont),
+          theme: pw.ThemeData.withFont(
+            base: await PdfGoogleFonts.openSansRegular(),
+            bold: await PdfGoogleFonts.openSansBold(),
+          ),
           header: (_) => pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
@@ -446,13 +509,14 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               ),
               child: pw.Table(
                 columnWidths: {
-                  0: const pw.FlexColumnWidth(1),
-                  1: const pw.FlexColumnWidth(3.5),
-                  2: const pw.FlexColumnWidth(1.5),
-                  3: const pw.FlexColumnWidth(1),
-                  4: const pw.FlexColumnWidth(1.5),
-                  5: const pw.FlexColumnWidth(1),
-                  6: const pw.FlexColumnWidth(1.5),
+                  0: const pw.FixedColumnWidth(30),
+                  1: const pw.FlexColumnWidth(3.2),
+                  2: const pw.FixedColumnWidth(50),
+                  3: const pw.FlexColumnWidth(1.2),
+                  4: const pw.FlexColumnWidth(1),
+                  5: const pw.FlexColumnWidth(1.5),
+                  6: const pw.FlexColumnWidth(1),
+                  7: const pw.FlexColumnWidth(1.5),
                 },
                 border: pw.TableBorder.all(color: PdfColors.black, width: 1),
                 defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
@@ -540,12 +604,12 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         onLayout: (_) => pdfBytes,
         name: 'PFC-${invoiceType}-INV-${invoice.invoiceNumber}-A4',
       );
-      Navigator.pop(context); // Close loading dialog
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('A4 Invoice printed successfully!')),
       );
     } catch (e) {
-      Navigator.pop(context); // Close loading dialog on error
+      Navigator.pop(context);
       print('Error in _printA4: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to print A4 invoice: $e')),

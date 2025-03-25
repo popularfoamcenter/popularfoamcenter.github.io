@@ -5,6 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+import 'package:printing/printing.dart'; // For printing
+import 'package:pdf/pdf.dart'; // For PDF generation
+import 'package:pdf/widgets.dart' as pw; // PDF widgets
+import 'package:share_plus/share_plus.dart'; // For sharing the PDF
+import 'dart:io'; // For file handling
+import 'package:path_provider/path_provider.dart'; // For temporary file storage
 
 // Import InvoiceViewScreen from the purchase invoice file
 // Adjust the path based on your project structure
@@ -17,9 +23,10 @@ class ProcessedTransaction {
   final double debitAmount;
   final double balance;
   final DateTime date;
+  final String? accountName; // Added to store account name for cash transactions
 
-  ProcessedTransaction(
-      this.doc, this.type, this.creditAmount, this.debitAmount, this.balance, this.date);
+  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount,
+      this.balance, this.date, {this.accountName});
 }
 
 class AccountTotal {
@@ -148,9 +155,16 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         print('Processed Purchase Invoice ${doc.id}: Amount: $amount, Balance: $currentBalance');
       } else {
         final accountId = doc['account_id'];
-        final account = await _accounts.doc(accountId).get();
-        accountName = account['name'] ?? 'Unknown Account';
-        type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
+        final accountSnapshot = await _accounts.doc(accountId).get();
+        if (!accountSnapshot.exists) {
+          print('Account $accountId for Cash Register ${doc.id} not found.');
+          accountName = 'Unknown Account';
+          type = 'Debit'; // Default to Debit if account type is missing
+        } else {
+          final account = accountSnapshot.data() as Map<String, dynamic>;
+          accountName = account['name'] ?? 'Unknown Account';
+          type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
+        }
 
         if (type == 'Credit') {
           totalCredit += amount;
@@ -181,6 +195,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         type == 'Debit' ? amount : 0.0,
         currentBalance,
         date,
+        accountName: accountName,
       ));
     }
 
@@ -264,6 +279,375 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     );
   }
 
+  Future<void> _printLedger() async {
+    print('Print button pressed');
+    if (_selectedCompanyId == null || _selectedCompanyName == null) {
+      print('No company selected');
+      _showSnackBar('Please select a company to print the ledger', Colors.red);
+      return;
+    }
+
+    try {
+      print('Fetching transactions...');
+      final transactions = await _combinedTransactions.first;
+      print('Transactions fetched: ${transactions.length}');
+      if (transactions.isEmpty) {
+        print('No transactions to print');
+        _showSnackBar('No transactions found for this company', Colors.orange);
+        return;
+      }
+
+      print('Processing transactions...');
+      final processedData = await _processTransactions(transactions);
+      print('Transactions processed: ${processedData.transactions.length}');
+
+      print('Generating PDF...');
+      final pdf = pw.Document();
+
+      // Load the font
+      final font = await PdfGoogleFonts.robotoRegular();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (pw.Context context) {
+            return [
+              // Header
+              pw.Text(
+                'Company Ledger',
+                style: pw.TextStyle(
+                  font: font,
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.blue,
+                ),
+              ),
+              pw.SizedBox(height: 16),
+
+              // Company Details
+              pw.Container(
+                padding: const pw.EdgeInsets.all(8),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Company Details',
+                      style: pw.TextStyle(
+                        font: font,
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue,
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Name',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        _selectedCompanyName ?? 'N/A',
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Balance Limit',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        '${_balanceLimit.toStringAsFixed(0)}/-',
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Account Type',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        _openingType ?? 'N/A',
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Opening Date',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        _formatDate(_openingDate),
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+
+              // Table Header
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                decoration: const pw.BoxDecoration(
+                  color: PdfColors.blue,
+                  borderRadius: pw.BorderRadius.only(
+                    topLeft: pw.Radius.circular(12),
+                    topRight: pw.Radius.circular(12),
+                  ),
+                ),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Date',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Details',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Credit',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Debit',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Balance',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Table Rows
+              ...processedData.transactions.map((pt) {
+                final isPurchase = pt.doc.reference.parent.id == 'purchaseinvoices';
+                String details;
+                if (isPurchase) {
+                  details = 'Invoice ${pt.doc['invoiceId'] ?? 'N/A'}';
+                } else {
+                  details = pt.accountName ?? 'Unknown Account';
+                }
+
+                return pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColors.white,
+                    border: pw.Border(
+                      bottom: pw.BorderSide(color: PdfColors.grey300),
+                      left: pw.BorderSide(color: PdfColors.grey300),
+                      right: pw.BorderSide(color: PdfColors.grey300),
+                    ),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          DateFormat('dd-MM-yyyy').format(pt.date),
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          details,
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: isPurchase ? PdfColors.blue : PdfColors.black,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: pt.creditAmount > 0 ? PdfColors.green : PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: pt.debitAmount > 0 ? PdfColors.red : PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          '${pt.balance.toStringAsFixed(0)}/-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: pt.balance >= 0 ? PdfColors.green : PdfColors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ];
+          },
+        ),
+      );
+
+      print('PDF generated, attempting to print...');
+      try {
+        final printed = await Printing.layoutPdf(
+          onLayout: (PdfPageFormat format) async => pdf.save(),
+        );
+        if (printed) {
+          print('Printing successful');
+          _showSnackBar('Ledger printed successfully', Colors.green);
+        } else {
+          print('Printing cancelled or failed, saving PDF as fallback...');
+          await _saveAndSharePdf(pdf);
+        }
+      } catch (e) {
+        print('Error during printing: $e');
+        _showSnackBar('Failed to print ledger: $e', Colors.red);
+        print('Saving PDF as fallback...');
+        await _saveAndSharePdf(pdf);
+      }
+    } catch (e) {
+      print('Error in _printLedger: $e');
+      _showSnackBar('Error generating ledger: $e', Colors.red);
+    }
+  }
+
+  // Fallback method to save and share the PDF if printing fails
+  Future<void> _saveAndSharePdf(pw.Document pdf) async {
+    try {
+      print('Saving PDF to temporary file...');
+      final bytes = await pdf.save();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/company_ledger.pdf');
+      await file.writeAsBytes(bytes);
+      print('PDF saved to ${file.path}');
+
+      print('Sharing PDF...');
+      await Share.shareXFiles([XFile(file.path)],
+          text: 'Company Ledger PDF',
+          subject: 'Company Ledger');
+      print('Share dialog opened');
+    } catch (e) {
+      print('Error saving/sharing PDF: $e');
+      _showSnackBar('Failed to save/share PDF: $e', Colors.red);
+    }
+  }
+
   void _viewInvoice(DocumentSnapshot invoiceDoc) {
     final invoice = invoiceDoc.data() as Map<String, dynamic>;
     Navigator.push(
@@ -298,6 +682,10 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         return KeyEventResult.handled;
       } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
         _dropdownFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyP) {
+        print('Ctrl + P pressed');
+        _printLedger();
         return KeyEventResult.handled;
       }
     }
@@ -350,10 +738,29 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
           ],
         ),
         backgroundColor: _backgroundColor,
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _showSummaryBottomSheet(context),
-          backgroundColor: _primaryColor,
-          child: const Icon(Icons.info_outline, color: Colors.white),
+        floatingActionButton: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              onPressed: () {
+                print('Summary button pressed');
+                _showSummaryBottomSheet(context);
+              },
+              backgroundColor: _primaryColor,
+              heroTag: 'summary',
+              child: const Icon(Icons.info_outline, color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            FloatingActionButton(
+              onPressed: () {
+                print('Print button pressed in FloatingActionButton');
+                _printLedger();
+              },
+              backgroundColor: _primaryColor,
+              heroTag: 'print',
+              child: const Icon(Icons.print, color: Colors.white),
+            ),
+          ],
         ),
         body: Column(
           children: [
@@ -449,7 +856,15 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
           return const Text('No companies available');
         }
 
-        final companyList = snapshot.data!.docs;
+        // Sort the company list alphabetically by name
+        List<DocumentSnapshot> companyList = snapshot.data!.docs;
+        companyList.sort((a, b) {
+          String nameA = (a['name'] as String).toLowerCase();
+          String nameB = (b['name'] as String).toLowerCase();
+          return nameA.compareTo(nameB);
+        });
+
+        print('Sorted company list: ${companyList.map((e) => e['name']).toList()}');
 
         return Container(
           height: 56,
@@ -510,28 +925,10 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                 hintText: 'Select company',
                 hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 0),
               ),
               baseStyle: TextStyle(color: _textColor, fontSize: 14),
             ),
-            dropdownBuilder: (context, selectedItem) {
-              return GestureDetector(
-                onTap: () {
-                  // Request focus on the dropdown field when clicked
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _dropdownFocusNode.requestFocus();
-                  });
-                },
-                child: Text(
-                  selectedItem ?? 'Select company',
-                  style: TextStyle(
-                    color: selectedItem != null ? _textColor : _secondaryTextColor,
-                    fontSize: 14,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              );
-            },
             items: companyList.map((company) => company['name'] as String).toList(),
             selectedItem: _selectedCompanyName,
             onChanged: (String? value) async {
@@ -704,12 +1101,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   color: _primaryColor,
                 ),
               )
-                  : FutureBuilder<DocumentSnapshot>(
-                future: _accounts.doc(pt.doc['account_id']).get(),
-                builder: (context, snapshot) {
-                  return _DataCell(snapshot.data?['name'] ?? 'Unknown Account');
-                },
-              ),
+                  : _DataCell(pt.accountName ?? 'Unknown Account'),
             ),
             Expanded(
               child: _DataCell(
@@ -822,6 +1214,16 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       print('Error formatting date: $e');
       return dateString;
     }
+  }
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 }
 

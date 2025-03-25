@@ -326,12 +326,13 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       final newItem = CartItem(
         quality: qualityName,
         itemName: itemName,
-        covered: coveredStatus,
+        covered: coveredStatus, // Already correctly fetching from inventoryItem
         qty: 1.0,
         originalQty: 0.0,
         price: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
         discount: '0',
         total: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
+        packagingUnit: inventoryItem['packagingUnit']?.toString().trim() ?? 'Unit', // Added packagingUnit
       );
 
       if (_selectedCustomer['id'] != 'walking' && !_useCustomName) {
@@ -814,67 +815,115 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             .limit(1)
             .get();
         if (querySnapshot.docs.isNotEmpty) {
+          final data = querySnapshot.docs.first.data();
           packagingUnits['${item.itemName}-${item.quality}'] =
-              querySnapshot.docs.first.data()['packagingUnit'] ?? 'Unit';
+          data['packagingUnit'] == 'Pieces' ? 'pcs' : (data['packagingUnit'] ?? 'Unit');
         } else {
           packagingUnits['${item.itemName}-${item.quality}'] = 'Unit';
         }
       }
 
-      // Sort items alphabetically by quality first and then by itemName
       final sortedItems = List<CartItem>.from(invoice.items)
         ..sort((a, b) {
-          final aQuality = (a.quality).toLowerCase(); // quality is required, no null check needed
-          final bQuality = (b.quality).toLowerCase();
+          final aQuality = a.quality.toLowerCase();
+          final bQuality = b.quality.toLowerCase();
           final qualityComparison = aQuality.compareTo(bQuality);
           if (qualityComparison != 0) return qualityComparison;
-
-          final aName = (a.itemName).toLowerCase(); // itemName is required, no null check needed
-          final bName = (b.itemName).toLowerCase();
+          final aName = a.itemName.toLowerCase();
+          final bName = b.itemName.toLowerCase();
           return aName.compareTo(bName);
         });
 
-      // Debug print to verify sorting
-      print('Original Items:');
-      for (var item in invoice.items) {
-        print('${item.quality} - ${item.itemName}');
-      }
-      print('Sorted Items:');
-      for (var item in sortedItems) {
-        print('${item.quality} - ${item.itemName}');
-      }
-
-      // Build items table rows with sorted items
       final List<pw.TableRow> itemTableRows = [
         pw.TableRow(
           decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
           children: [
-            'Sr No',
-            'Description',
-            'Pack Unit',
-            'Qty',
-            'Unit Price',
-            'Disc.%',
-            'Total',
-          ].map((text) => pw.Container(
-            padding: const pw.EdgeInsets.all(5),
-            alignment: text == 'Description' ? pw.Alignment.centerLeft : pw.Alignment.center,
-            child: pw.Text(text,
-                style: pw.TextStyle(
-                    color: PdfColors.white,
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold)),
-          )).toList(),
+            pw.Container(
+              width: 30, // Narrower Serial Number column
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Sr No',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Text('Description',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              width: 50, // New Cvrd column
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Cvrd',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Pack Unit',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Qty',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Unit Price',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Disc.%',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(5),
+              alignment: pw.Alignment.center,
+              child: pw.Text('Total',
+                  style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold)),
+            ),
+          ],
         ),
         ...sortedItems.asMap().entries.map((entry) {
           final int index = entry.key + 1;
           final item = entry.value;
           final qtyString = item.qty % 1 == 0 ? item.qty.toInt().toString() : item.qty.toStringAsFixed(2);
-          final discountValue = double.tryParse(item.discount) ?? 0.0;
+          final discountValue = double.tryParse(item.discount ?? '0') ?? 0.0;
           final packagingUnit = packagingUnits['${item.itemName}-${item.quality}'] ?? 'Unit';
           return pw.TableRow(
             children: [
               pw.Container(
+                  width: 30,
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.center,
                   child: pw.Text(index.toString(),
@@ -883,6 +932,12 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text('${item.quality}   ${item.itemName}',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  width: 50,
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(item.covered ?? '-',
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
@@ -897,7 +952,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.center,
-                  child: pw.Text(numberFormat.format(double.parse(item.price)),
+                  child: pw.Text(numberFormat.format(double.parse(item.price ?? '0')),
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
@@ -907,14 +962,13 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.center,
-                  child: pw.Text(numberFormat.format(double.parse(item.total)),
+                  child: pw.Text(numberFormat.format(double.parse(item.total ?? '0')),
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
             ],
           );
         }),
       ];
 
-      // Build totals table rows (unchanged)
       final List<pw.TableRow> totalsTableRows = [
         pw.TableRow(
           children: [
@@ -1093,7 +1147,6 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             ],
           ),
           build: (context) => [
-            // Items Table
             pw.Container(
               decoration: pw.BoxDecoration(
                 borderRadius: const pw.BorderRadius.vertical(top: pw.Radius.circular(10)),
@@ -1101,13 +1154,14 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               ),
               child: pw.Table(
                 columnWidths: {
-                  0: const pw.FlexColumnWidth(1),
-                  1: const pw.FlexColumnWidth(3.5),
-                  2: const pw.FlexColumnWidth(1.5),
-                  3: const pw.FlexColumnWidth(1),
-                  4: const pw.FlexColumnWidth(1.5),
-                  5: const pw.FlexColumnWidth(1),
-                  6: const pw.FlexColumnWidth(1.5),
+                  0: const pw.FixedColumnWidth(30), // Narrower Serial Number
+                  1: const pw.FlexColumnWidth(3.2), // Adjusted Description
+                  2: const pw.FixedColumnWidth(50), // New Cvrd column
+                  3: const pw.FlexColumnWidth(1.2), // Pack Unit
+                  4: const pw.FlexColumnWidth(1),   // Qty
+                  5: const pw.FlexColumnWidth(1.5), // Unit Price
+                  6: const pw.FlexColumnWidth(1),   // Disc.%
+                  7: const pw.FlexColumnWidth(1.5), // Total
                 },
                 border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
                 defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
@@ -1115,7 +1169,6 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               ),
             ),
             pw.SizedBox(height: 20),
-            // Totals Table
             pw.Container(
               alignment: pw.Alignment.centerRight,
               child: pw.Container(
@@ -1136,7 +1189,6 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               ),
             ),
             pw.SizedBox(height: 12),
-            // Total Amount Highlight Box
             pw.Container(
               alignment: pw.Alignment.centerRight,
               child: pw.Container(

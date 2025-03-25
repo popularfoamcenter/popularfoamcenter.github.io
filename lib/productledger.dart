@@ -4,6 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:dropdown_search/dropdown_search.dart';
+import 'package:printing/printing.dart'; // For printing
+import 'package:pdf/pdf.dart'; // For PDF generation
+import 'package:pdf/widgets.dart' as pw; // PDF widgets
+import 'package:share_plus/share_plus.dart'; // For sharing the PDF
+import 'dart:io'; // For file handling
+import 'package:path_provider/path_provider.dart'; // For temporary file storage
 
 // Assuming these files contain the required classes
 import 'pointofsale.dart'; // Replace with actual file path
@@ -283,6 +289,346 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     );
   }
 
+  Future<void> _printLedger() async {
+    print('Print button pressed');
+    if (_selectedQuality == null || _selectedItem == null) {
+      print('No quality or item selected');
+      _showSnackBar('Please select a quality and item to print the ledger', Colors.red);
+      return;
+    }
+
+    try {
+      print('Fetching transactions...');
+      final transactions = await _fetchLedgerTransactions(_selectedQuality!);
+      print('Transactions fetched: ${transactions.length}');
+      if (transactions.isEmpty) {
+        print('No transactions to print');
+        _showSnackBar('No transactions found for this quality and item', Colors.orange);
+        return;
+      }
+
+      // Fetch the opening balance before building the PDF
+      print('Fetching opening balance...');
+      final openingBalance = await _fetchOpeningBalance();
+      print('Opening balance fetched: $openingBalance');
+
+      print('Generating PDF...');
+      final pdf = pw.Document();
+
+      // Load the font
+      final font = await PdfGoogleFonts.robotoRegular();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (pw.Context context) {
+            return [
+              // Header
+              pw.Text(
+                'Product Ledger',
+                style: pw.TextStyle(
+                  font: font,
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.blue,
+                ),
+              ),
+              pw.SizedBox(height: 16),
+
+              // Product Details
+              pw.Container(
+                padding: const pw.EdgeInsets.all(8),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      'Product Details',
+                      style: pw.TextStyle(
+                        font: font,
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue,
+                      ),
+                    ),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Quality',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        _selectedQuality ?? 'N/A',
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Item',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        _selectedItem ?? 'N/A',
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                    pw.SizedBox(height: 4),
+                    pw.Row(children: [
+                      pw.SizedBox(
+                        width: 100,
+                        child: pw.Text(
+                          'Opening Balance',
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        _formatDouble(openingBalance), // Use the pre-fetched value
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 12,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 16),
+
+              // Table Header
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                decoration: const pw.BoxDecoration(
+                  color: PdfColors.blue,
+                  borderRadius: pw.BorderRadius.only(
+                    topLeft: pw.Radius.circular(12),
+                    topRight: pw.Radius.circular(12),
+                  ),
+                ),
+                child: pw.Row(
+                  children: [
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Date',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      flex: 2,
+                      child: pw.Text(
+                        'Details',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'In',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Out',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                    pw.Expanded(
+                      child: pw.Text(
+                        'Balance',
+                        textAlign: pw.TextAlign.center,
+                        style: pw.TextStyle(
+                          font: font,
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Table Rows
+              ...transactions.map((transaction) {
+                return pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                  decoration: const pw.BoxDecoration(
+                    color: PdfColors.white,
+                    border: pw.Border(
+                      bottom: pw.BorderSide(color: PdfColors.grey300),
+                      left: pw.BorderSide(color: PdfColors.grey300),
+                      right: pw.BorderSide(color: PdfColors.grey300),
+                    ),
+                  ),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          DateFormat('dd-MM-yyyy').format(transaction.date),
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: PdfColors.black,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: 2,
+                        child: pw.Text(
+                          transaction.details,
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: PdfColors.blue,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          transaction.inQty > 0 ? _formatDouble(transaction.inQty) : '-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: transaction.inQty > 0 ? PdfColors.green : PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          transaction.outQty > 0 ? _formatDouble(transaction.outQty) : '-',
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: transaction.outQty > 0 ? PdfColors.red : PdfColors.grey600,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Text(
+                          _formatDouble(transaction.balance),
+                          textAlign: pw.TextAlign.center,
+                          style: pw.TextStyle(
+                            font: font,
+                            fontSize: 12,
+                            color: transaction.balance >= 0 ? PdfColors.green : PdfColors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ];
+          },
+        ),
+      );
+
+      print('PDF generated, attempting to print...');
+      try {
+        final printed = await Printing.layoutPdf(
+          onLayout: (PdfPageFormat format) async => pdf.save(),
+        );
+        if (printed) {
+          print('Printing successful');
+          _showSnackBar('Ledger printed successfully', Colors.green);
+        } else {
+          print('Printing cancelled or failed, saving PDF as fallback...');
+          await _saveAndSharePdf(pdf);
+        }
+      } catch (e) {
+        print('Error during printing: $e');
+        _showSnackBar('Failed to print ledger: $e', Colors.red);
+        print('Saving PDF as fallback...');
+        await _saveAndSharePdf(pdf);
+      }
+    } catch (e) {
+      print('Error in _printLedger: $e');
+      _showSnackBar('Error generating ledger: $e', Colors.red);
+    }
+  }
+
+  Future<void> _saveAndSharePdf(pw.Document pdf) async {
+    try {
+      print('Saving PDF to temporary file...');
+      final bytes = await pdf.save();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/product_ledger.pdf');
+      await file.writeAsBytes(bytes);
+      print('PDF saved to ${file.path}');
+
+      print('Sharing PDF...');
+      await Share.shareXFiles([XFile(file.path)],
+          text: 'Product Ledger PDF',
+          subject: 'Product Ledger');
+      print('Share dialog opened');
+    } catch (e) {
+      print('Error saving/sharing PDF: $e');
+      _showSnackBar('Failed to save/share PDF: $e', Colors.red);
+    }
+  }
+
   Future<void> _navigateToInvoiceView(ProcessedTransaction transaction) async {
     try {
       if (transaction.type == 'Purchase') {
@@ -353,6 +699,10 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           _itemDropdownFocusNode.requestFocus();
         }
         return KeyEventResult.handled;
+      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyP) {
+        print('Ctrl + P pressed');
+        _printLedger();
+        return KeyEventResult.handled;
       }
     }
     return KeyEventResult.ignored;
@@ -408,10 +758,29 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           ],
         ),
         backgroundColor: _backgroundColor,
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _showSummaryBottomSheet(context),
-          backgroundColor: _primaryColor,
-          child: const Icon(Icons.info_outline, color: Colors.white),
+        floatingActionButton: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              onPressed: () {
+                print('Summary button pressed');
+                _showSummaryBottomSheet(context);
+              },
+              backgroundColor: _primaryColor,
+              heroTag: 'summary',
+              child: const Icon(Icons.info_outline, color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            FloatingActionButton(
+              onPressed: () {
+                print('Print button pressed in FloatingActionButton');
+                _printLedger();
+              },
+              backgroundColor: _primaryColor,
+              heroTag: 'print',
+              child: const Icon(Icons.print, color: Colors.white),
+            ),
+          ],
         ),
         body: Column(
           children: [
@@ -650,7 +1019,10 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     stream: _firestore.collection('qualities').snapshots(),
     builder: (context, snapshot) {
       if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
-      final qualities = snapshot.data!.docs.map((doc) => doc['name'] as String).toList();
+      List<String> qualities = snapshot.data!.docs.map((doc) => doc['name'] as String).toList();
+      // Sort qualities alphabetically
+      qualities.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      print('Sorted qualities list: $qualities');
 
       return Container(
         height: 56,
@@ -705,27 +1077,10 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               hintText: 'Select quality',
               hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 0),
             ),
             baseStyle: TextStyle(color: _textColor, fontSize: 14),
           ),
-          dropdownBuilder: (context, selectedItem) {
-            return GestureDetector(
-              onTap: () {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _qualityDropdownFocusNode.requestFocus();
-                });
-              },
-              child: Text(
-                selectedItem ?? 'Select quality',
-                style: TextStyle(
-                  color: selectedItem != null ? _textColor : _secondaryTextColor,
-                  fontSize: 14,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          },
           items: qualities,
           selectedItem: _selectedQuality,
           onChanged: (String? value) {
@@ -771,7 +1126,10 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     stream: _firestore.collection('items').where('qualityName', isEqualTo: _selectedQuality).snapshots(),
     builder: (context, snapshot) {
       if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
-      final items = snapshot.data!.docs.map((doc) => doc['itemName'] as String).toList();
+      List<String> items = snapshot.data!.docs.map((doc) => doc['itemName'] as String).toList();
+      // Sort items alphabetically
+      items.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      print('Sorted items list: $items');
 
       return Container(
         height: 56,
@@ -826,27 +1184,10 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               hintText: 'Select item',
               hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 0),
             ),
             baseStyle: TextStyle(color: _textColor, fontSize: 14),
           ),
-          dropdownBuilder: (context, selectedItem) {
-            return GestureDetector(
-              onTap: () {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _itemDropdownFocusNode.requestFocus();
-                });
-              },
-              child: Text(
-                selectedItem ?? 'Select item',
-                style: TextStyle(
-                  color: selectedItem != null ? _textColor : _secondaryTextColor,
-                  fontSize: 14,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          },
           items: items,
           selectedItem: _selectedItem,
           onChanged: (String? value) {
@@ -882,6 +1223,16 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
         borderRadius: BorderRadius.circular(12), side: BorderSide(color: _primaryColor.withOpacity(0.3))),
     onPressed: () => _selectDate(context, isFromDate),
   );
+
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
 }
 
 class _HeaderCell extends StatelessWidget {
