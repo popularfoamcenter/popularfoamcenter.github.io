@@ -8,7 +8,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
 import 'transactionspage.dart'; // Assuming this is the file containing TransactionsPage
-
 class CartItem {
   final String quality;
   final String itemName;
@@ -18,6 +17,7 @@ class CartItem {
   String price;
   String discount;
   String total;
+  final String? packagingUnit; // New field
 
   CartItem({
     required this.quality,
@@ -28,22 +28,24 @@ class CartItem {
     required this.price,
     required this.discount,
     required this.total,
+    this.packagingUnit, // Added to constructor
   });
 
   Map<String, dynamic> toMap() => {
     'quality': quality,
-    'item': itemName,
+    'item': itemName, // Note: 'item' not 'itemName' as per your toMap
     'covered': covered,
     'qty': qty,
     'originalQty': originalQty,
     'price': price,
     'discount': discount,
     'total': total,
+    'packagingUnit': packagingUnit, // Added to serialization
   };
 
   factory CartItem.fromMap(Map<String, dynamic> map) => CartItem(
     quality: map['quality'] ?? '',
-    itemName: map['item'] ?? '',
+    itemName: map['item'] ?? '', // Note: 'item' not 'itemName' as per your fromMap
     covered: map['covered'],
     qty: (map['qty'] is num ? map['qty'].toDouble() : double.tryParse(map['qty'].toString())) ?? 0.0,
     originalQty: (map['originalQty'] is num
@@ -54,6 +56,7 @@ class CartItem {
     price: map['price'] ?? '0',
     discount: map['discount'] ?? '0',
     total: map['total'] ?? '0',
+    packagingUnit: map['packagingUnit'], // Added to deserialization
   );
 
   CartItem copyWith({
@@ -61,6 +64,7 @@ class CartItem {
     String? price,
     String? discount,
     String? total,
+    String? packagingUnit, // Optional: add if you need to update this in copyWith
   }) =>
       CartItem(
         quality: quality,
@@ -71,6 +75,7 @@ class CartItem {
         price: price ?? this.price,
         discount: discount ?? this.discount,
         total: total ?? this.total,
+        packagingUnit: packagingUnit ?? this.packagingUnit, // Added to copyWith
       );
 }
 
@@ -196,7 +201,6 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   void initState() {
     super.initState();
     _initializeState();
-    // Only set default date if not editing an invoice
     if (widget.invoice == null) {
       _selectedDate = DateTime.now();
       _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
@@ -205,11 +209,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _focusNode.requestFocus();
     });
     for (var _ in _cartItems) {
-      _focusNodes.add([
-        FocusNode(),
-        FocusNode(),
-        FocusNode(),
-      ]);
+      _focusNodes.add([FocusNode(), FocusNode(), FocusNode()]);
     }
   }
 
@@ -239,22 +239,45 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       _phoneController.text = _selectedCustomer['number'] ?? '';
       _customCustomerNameController.text = _selectedCustomer['name'] ?? '';
       _useCustomName = _selectedCustomer['id']?.isEmpty ?? true;
-      // Preserve original date when editing
       _selectedDate = widget.invoice!.timestamp is Timestamp
           ? (widget.invoice!.timestamp as Timestamp).toDate()
-          : DateTime.now(); // Fallback only if timestamp is invalid
+          : DateTime.now();
       _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
       if (widget.invoice!.type == 'Return') {
         _returnInvoiceNumber = widget.invoice!.toMap()['returnInvoice'];
       }
     } else {
-      _selectedCustomer = walkingCustomer;
-      _selectedTransactionType = 'Sale';
-      _customCustomerNameController.text = 'Walking Customer';
-      _useCustomName = false;
-      _selectedDate = DateTime.now();
-      _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
+      _resetState();
     }
+  }
+
+  void _resetState() {
+    _selectedCustomer = walkingCustomer;
+    _selectedTransactionType = 'Sale';
+    _cartItems.clear();
+    _globalDiscount = 0;
+    _phoneController.clear();
+    _searchController.clear();
+    _givenAmountController.clear();
+    _globalDiscountController.clear();
+    _customCustomerNameController.text = 'Walking Customer';
+    _useCustomName = false;
+    _selectedDate = DateTime.now();
+    _dateController.text = DateFormat('dd-MM-yyyy').format(_selectedDate);
+    _searchQuery = '';
+    _showPaymentDialog = false;
+    _showUndoToast = false;
+    _deletedItem = null;
+    _deletedIndex = null;
+    _returnInvoiceNumber = null;
+    _selectedItemIndex = null;
+    _selectedFieldIndex = 0;
+    for (var nodes in _focusNodes) {
+      for (var node in nodes) {
+        node.dispose();
+      }
+    }
+    _focusNodes.clear();
   }
 
   @override
@@ -317,11 +340,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
 
       setState(() {
         _cartItems.add(newItem);
-        _focusNodes.add([
-          FocusNode(),
-          FocusNode(),
-          FocusNode(),
-        ]);
+        _focusNodes.add([FocusNode(), FocusNode(), FocusNode()]);
         _selectedItemIndex = _cartItems.length - 1;
         _selectedFieldIndex = 0;
         _searchController.clear();
@@ -598,392 +617,593 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     final total = _calculateTotal();
     final givenAmount = double.tryParse(_givenAmountController.text) ?? 0.0;
     final originalType = widget.invoice?.type ?? _selectedTransactionType;
-
     final isEditing = widget.invoice != null;
     final invoiceRef = isEditing
         ? _firestore.collection('invoices').doc(widget.invoice!.id)
         : _firestore.collection('invoices').doc();
-    final invoiceNumber = isEditing ? widget.invoice!.invoiceNumber : 0;
 
-    try {
-      final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
-        if (isEditing) {
-          await _updateStockForEditedItems(transaction, originalType);
-        } else {
-          await _validateAndUpdateStock(transaction, originalType);
-        }
+    // Step 1: Prepare data and run independent operations in parallel
+    final stockCheckFuture = _checkStockAvailabilityOptimized();
+    final invoiceNumberFuture = isEditing
+        ? Future.value(widget.invoice!.invoiceNumber)
+        : _incrementInvoiceCounter();
 
-        final customerData = _useCustomName
-            ? {
-          'id': '',
-          'name': _customCustomerNameController.text.trim().isEmpty
-              ? 'Walking Customer'
-              : _customCustomerNameController.text.trim(),
-          'number': _phoneController.text.trim()
-        }
-            : _selectedCustomer;
+    final results = await Future.wait([stockCheckFuture, invoiceNumberFuture]);
+    final hasLowStock = results[0] as bool;
+    final invoiceNumber = results[1] as int;
 
-        final tempInvoice = Invoice(
-          id: invoiceRef.id,
-          invoiceNumber: invoiceNumber,
-          customer: customerData,
-          type: _selectedTransactionType,
-          items: List.from(_cartItems),
-          subtotal: subtotal,
-          globalDiscount: _globalDiscount,
-          total: total,
-          givenAmount: givenAmount,
-          returnAmount: math.max(givenAmount - total, 0),
-          balanceDue: math.max(total - givenAmount, 0),
-          timestamp: Timestamp.fromDate(_selectedDate), // Use original or user-modified date
-        );
-
-        if (isEditing) {
-          transaction.update(invoiceRef, tempInvoice.toMap());
-        } else {
-          transaction.set(invoiceRef, tempInvoice.toMap());
-        }
-
-        return tempInvoice;
-      });
-
-      Invoice finalInvoice = invoice;
-      if (!isEditing) {
-        final newInvoiceNumber = await _incrementInvoiceCounter();
-        final updatedInvoice = Invoice(
-          id: invoiceRef.id,
-          invoiceNumber: newInvoiceNumber,
-          customer: invoice.customer,
-          type: invoice.type,
-          items: invoice.items,
-          subtotal: invoice.subtotal,
-          globalDiscount: invoice.globalDiscount,
-          total: invoice.total,
-          givenAmount: invoice.givenAmount,
-          returnAmount: invoice.returnAmount,
-          balanceDue: invoice.balanceDue,
-          timestamp: Timestamp.fromDate(_selectedDate), // Use original or user-modified date
-        );
-        await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
-        finalInvoice = updatedInvoice;
-      }
-
-      setState(() {
-        _cartItems.clear();
-        _globalDiscount = 0;
-        _givenAmountController.clear();
-        _showPaymentDialog = false;
-      });
-
-      _showSnackBar('Transaction ${isEditing ? 'updated' : 'saved'}', Colors.green);
-
-      if (viewAfterSave) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (context) => PointOfSalePage(invoice: finalInvoice, isReadOnly: true)),
-        );
-      }
-
-      return finalInvoice;
-    } catch (e) {
-      _showSnackBar('Transaction failed: $e', Colors.red);
-      rethrow;
+    if (hasLowStock) {
+      final proceed = await _showLowStockDialog();
+      if (!proceed) return null;
     }
+
+    // Step 2: Use a batch for stock updates and a transaction for invoice
+    final batch = _firestore.batch();
+    final customerData = _useCustomName
+        ? {
+      'id': '',
+      'name': _customCustomerNameController.text.trim().isEmpty
+          ? 'Walking Customer'
+          : _customCustomerNameController.text.trim(),
+      'number': _phoneController.text.trim()
+    }
+        : _selectedCustomer;
+
+    final tempInvoice = Invoice(
+      id: invoiceRef.id,
+      invoiceNumber: invoiceNumber,
+      customer: customerData,
+      type: _selectedTransactionType,
+      items: List.from(_cartItems),
+      subtotal: subtotal,
+      globalDiscount: _globalDiscount,
+      total: total,
+      givenAmount: givenAmount,
+      returnAmount: math.max(givenAmount - total, 0),
+      balanceDue: math.max(total - givenAmount, 0),
+      timestamp: Timestamp.fromDate(_selectedDate),
+    );
+
+    // Step 3: Handle stock updates with batch
+    await _updateStockOptimized(batch, originalType);
+
+    // Step 4: Commit invoice within a transaction
+    final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
+      if (isEditing) {
+        transaction.update(invoiceRef, tempInvoice.toMap());
+      } else {
+        transaction.set(invoiceRef, tempInvoice.toMap());
+      }
+      return tempInvoice;
+    });
+
+    // Step 5: Commit stock updates
+    await batch.commit();
+
+    // Step 6: Reset UI and notify user (unchanged)
+    setState(() {
+      _resetState();
+    });
+    _showSnackBar('Transaction ${isEditing ? 'updated' : 'saved'}', Colors.green);
+
+    if (viewAfterSave) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (context) => PointOfSalePage(invoice: invoice, isReadOnly: true)),
+      );
+    }
+
+    return invoice;
   }
 
+// Optimized stock availability check
+  Future<bool> _checkStockAvailabilityOptimized() async {
+    if (_selectedTransactionType == 'Order Booking') return false;
+
+    final itemKeys = _cartItems
+        .map((item) => {'itemName': item.itemName, 'quality': item.quality, 'qtyChange': item.qty - item.originalQty})
+        .toList();
+
+    // Batch fetch all items (assuming reasonable cart size; split if >10)
+    final List<QuerySnapshot> snapshots = [];
+    for (var i = 0; i < itemKeys.length; i += 10) {
+      final batch = itemKeys.sublist(i, math.min(i + 10, itemKeys.length));
+      final itemNames = batch.map((k) => k['itemName']).toList();
+      final snapshot = await _firestore
+          .collection('items')
+          .where('itemName', whereIn: itemNames)
+          .get();
+      snapshots.add(snapshot);
+    }
+
+    final itemMap = {
+      for (var snapshot in snapshots)
+        for (var doc in snapshot.docs)
+          '${doc['itemName']}-${doc['qualityName']}': (doc['stockQuantity'] as num?)?.toDouble() ?? 0.0
+    };
+
+    for (final item in itemKeys) {
+      final key = '${item['itemName']}-${item['quality']}';
+      final stock = itemMap[key] ?? 0.0;
+      final qtyChange = item['qtyChange'] as double;
+      if (_selectedTransactionType != 'Return' && qtyChange > 0 && stock < qtyChange) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+// Optimized stock update using batch
+  Future<void> _updateStockOptimized(WriteBatch batch, String originalType) async {
+    if (_selectedTransactionType == 'Order Booking') return;
+
+    final itemKeys = _cartItems
+        .map((item) => {'itemName': item.itemName, 'quality': item.quality, 'qtyChange': item.qty - item.originalQty})
+        .toList();
+
+    // Fetch all items in one go
+    final List<QuerySnapshot> snapshots = [];
+    for (var i = 0; i < itemKeys.length; i += 10) {
+      final batchKeys = itemKeys.sublist(i, math.min(i + 10, itemKeys.length));
+      final itemNames = batchKeys.map((k) => k['itemName']).toList();
+      final snapshot = await _firestore
+          .collection('items')
+          .where('itemName', whereIn: itemNames)
+          .get();
+      snapshots.add(snapshot);
+    }
+
+    final itemMap = {
+      for (var snapshot in snapshots)
+        for (var doc in snapshot.docs)
+          '${doc['itemName']}-${doc['qualityName']}': {'ref': doc.reference, 'stock': (doc['stockQuantity'] as num?)?.toDouble() ?? 0.0}
+    };
+
+    for (final item in itemKeys) {
+      final key = '${item['itemName']}-${item['quality']}';
+      final data = itemMap[key];
+      if (data == null) throw Exception('Item $key not found');
+      final ref = data['ref'] as DocumentReference;
+      final stock = data['stock'] as double;
+      final qtyChange = item['qtyChange'] as double;
+
+      if (qtyChange != 0) {
+        if (widget.invoice != null && originalType != _selectedTransactionType) {
+          final originalQtyChange = widget.invoice!.items
+              .firstWhere((i) => i.itemName == item['itemName'] && i.quality == item['quality'],
+              orElse: () => CartItem(
+                  quality: item['quality'] as String,
+                  itemName: item['itemName'] as String,
+                  qty: 0.0,
+                  originalQty: 0.0,
+                  price: '0',
+                  discount: '0',
+                  total: '0'))
+              .qty;
+          final originalAdjustment = originalType == 'Return' ? originalQtyChange : -originalQtyChange;
+          final newStockAfterRevert = stock + originalAdjustment;
+          final newAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
+          final newStock = newStockAfterRevert + newAdjustment;
+          if (newStock < 0) throw Exception('Insufficient stock for ${item['itemName']} after type change');
+          batch.update(ref, {'stockQuantity': newStock});
+        } else {
+          final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
+          if (newStock < 0) throw Exception('Insufficient stock for ${item['itemName']}');
+          batch.update(ref, {'stockQuantity': newStock});
+        }
+      }
+    }
+  }
   Future<void> _printInvoice(Invoice invoice) async {
     try {
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
-      final Uint8List logoImage =
-      (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
+      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
       DateTime invoiceDate = invoice.timestamp is Timestamp
           ? (invoice.timestamp as Timestamp).toDate()
           : DateTime.now();
 
+      // Fetch packaging units from Firestore 'items' collection
+      final Map<String, String> packagingUnits = {};
+      for (final item in invoice.items) {
+        final querySnapshot = await FirebaseFirestore.instance
+            .collection('items')
+            .where('itemName', isEqualTo: item.itemName)
+            .where('qualityName', isEqualTo: item.quality)
+            .limit(1)
+            .get();
+        if (querySnapshot.docs.isNotEmpty) {
+          packagingUnits['${item.itemName}-${item.quality}'] =
+              querySnapshot.docs.first.data()['packagingUnit'] ?? 'Unit';
+        } else {
+          packagingUnits['${item.itemName}-${item.quality}'] = 'Unit';
+        }
+      }
+
+      // Sort items alphabetically by quality first and then by itemName
+      final sortedItems = List<CartItem>.from(invoice.items)
+        ..sort((a, b) {
+          final aQuality = (a.quality).toLowerCase(); // quality is required, no null check needed
+          final bQuality = (b.quality).toLowerCase();
+          final qualityComparison = aQuality.compareTo(bQuality);
+          if (qualityComparison != 0) return qualityComparison;
+
+          final aName = (a.itemName).toLowerCase(); // itemName is required, no null check needed
+          final bName = (b.itemName).toLowerCase();
+          return aName.compareTo(bName);
+        });
+
+      // Debug print to verify sorting
+      print('Original Items:');
+      for (var item in invoice.items) {
+        print('${item.quality} - ${item.itemName}');
+      }
+      print('Sorted Items:');
+      for (var item in sortedItems) {
+        print('${item.quality} - ${item.itemName}');
+      }
+
+      // Build items table rows with sorted items
+      final List<pw.TableRow> itemTableRows = [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+          children: [
+            'Sr No',
+            'Description',
+            'Pack Unit',
+            'Qty',
+            'Unit Price',
+            'Disc.%',
+            'Total',
+          ].map((text) => pw.Container(
+            padding: const pw.EdgeInsets.all(5),
+            alignment: text == 'Description' ? pw.Alignment.centerLeft : pw.Alignment.center,
+            child: pw.Text(text,
+                style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 10,
+                    fontWeight: pw.FontWeight.bold)),
+          )).toList(),
+        ),
+        ...sortedItems.asMap().entries.map((entry) {
+          final int index = entry.key + 1;
+          final item = entry.value;
+          final qtyString = item.qty % 1 == 0 ? item.qty.toInt().toString() : item.qty.toStringAsFixed(2);
+          final discountValue = double.tryParse(item.discount) ?? 0.0;
+          final packagingUnit = packagingUnits['${item.itemName}-${item.quality}'] ?? 'Unit';
+          return pw.TableRow(
+            children: [
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(index.toString(),
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.centerLeft,
+                  child: pw.Text('${item.quality}   ${item.itemName}',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(packagingUnit,
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(qtyString,
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(numberFormat.format(double.parse(item.price)),
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text('$discountValue%',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(numberFormat.format(double.parse(item.total)),
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+            ],
+          );
+        }),
+      ];
+
+      // Build totals table rows (unchanged)
+      final List<pw.TableRow> totalsTableRows = [
+        pw.TableRow(
+          children: [
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text('Subtotal:',
+                    style: pw.TextStyle(
+                        fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(numberFormat.format(invoice.subtotal),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ],
+        ),
+        pw.TableRow(
+          children: [
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text('Global Discount:',
+                    style: pw.TextStyle(
+                        fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text('-${numberFormat.format(invoice.globalDiscount)}',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ],
+        ),
+        pw.TableRow(
+          children: [
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text('Total Amount:',
+                    style: pw.TextStyle(
+                        fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(numberFormat.format(invoice.total),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ],
+        ),
+        pw.TableRow(
+          children: [
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text('Amount Received:',
+                    style: pw.TextStyle(
+                        fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(
+                padding: const pw.EdgeInsets.all(5),
+                alignment: pw.Alignment.centerRight,
+                child: pw.Text(numberFormat.format(invoice.givenAmount),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ],
+        ),
+        if (invoice.returnAmount > 0)
+          pw.TableRow(
+            children: [
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Text('Change Due:',
+                      style: pw.TextStyle(
+                          fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Text(numberFormat.format(invoice.returnAmount),
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+            ],
+          ),
+        if (invoice.balanceDue > 0)
+          pw.TableRow(
+            children: [
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Text('Balance Due:',
+                      style: pw.TextStyle(
+                          fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+              pw.Container(
+                  padding: const pw.EdgeInsets.all(5),
+                  alignment: pw.Alignment.centerRight,
+                  child: pw.Text(numberFormat.format(invoice.balanceDue),
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+            ],
+          ),
+      ];
+
       pdf.addPage(
-        pw.Page(
+        pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(25),
           theme: pw.ThemeData.withFont(
             base: await PdfGoogleFonts.openSansRegular(),
             bold: await PdfGoogleFonts.openSansBold(),
           ),
-          build: (_) => pw.Stack(
+          header: (_) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('INVOICE',
-                              style: pw.TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColor.fromHex('#0D6EFD'))),
-                          pw.SizedBox(height: 8),
-                          pw.Text('Popular Foam Center',
-                              style: pw.TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black)),
-                          pw.Text('Zanana Hospital Road, Bahawalpur (63100)',
-                              style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                        ],
-                      ),
-                      pw.Image(pw.MemoryImage(logoImage), width: 135, height: 135),
+                      pw.Text('INVOICE',
+                          style: pw.TextStyle(
+                              fontSize: 22,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#0D6EFD'))),
+                      pw.SizedBox(height: 6),
+                      pw.Text('Popular Foam Center',
+                          style: pw.TextStyle(
+                              fontSize: 15,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black)),
+                      pw.Text('Zanana Hospital Road, Bahawalpur (63100)',
+                          style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
                     ],
                   ),
-                  pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 40),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
+                ],
+              ),
+              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text('Bill To:',
-                              style: pw.TextStyle(
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 12,
-                                  color: PdfColors.black)),
-                          pw.Text(invoice.customer['name'] ?? 'Walking Customer',
-                              style: const pw.TextStyle(fontSize: 14, color: PdfColors.black)),
-                          pw.SizedBox(height: 8),
-                          pw.Text('Invoice Date:',
-                              style: pw.TextStyle(
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 12,
-                                  color: PdfColors.black)),
-                          pw.Text(DateFormat('dd-MM-yyyy').format(invoiceDate),
-                              style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
-                        ],
-                      ),
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Text('Invoice #${invoice.invoiceNumber}',
-                              style: pw.TextStyle(
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 14,
-                                  color: PdfColor.fromHex('#0D6EFD'))),
-                          pw.SizedBox(height: 8),
-                          pw.Text('Transaction Type:',
-                              style: pw.TextStyle(
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 12,
-                                  color: PdfColors.black)),
-                          pw.Text(invoice.type.toUpperCase(),
-                              style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
-                        ],
-                      ),
+                      pw.Text('Bill To:',
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                              color: PdfColors.black)),
+                      pw.Text(invoice.customer['name'] ?? 'Walking Customer',
+                          style: const pw.TextStyle(fontSize: 13, color: PdfColors.black)),
+                      pw.SizedBox(height: 6),
+                      pw.Text('Invoice Date:',
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                              color: PdfColors.black)),
+                      pw.Text(DateFormat('dd-MM-yyyy').format(invoiceDate),
+                          style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
                     ],
                   ),
-                  pw.SizedBox(height: 30),
-                  pw.Table(
-                    columnWidths: {
-                      0: const pw.FlexColumnWidth(3.5),
-                      1: const pw.FlexColumnWidth(1),
-                      2: const pw.FlexColumnWidth(1.5),
-                      3: const pw.FlexColumnWidth(1),
-                      4: const pw.FlexColumnWidth(1.5),
-                    },
-                    border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      pw.TableRow(
-                        decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
-                        children: ['Item Description', 'Qty', 'Unit Price', 'Disc.%', 'Total']
-                            .map((text) => pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          child: pw.Text(text,
-                              style: pw.TextStyle(
-                                  color: PdfColors.white,
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold)),
-                        ))
-                            .toList(),
-                      ),
-                      ...invoice.items.map((item) => pw.TableRow(
-                        children: [
-                          pw.Container(
-                              padding: const pw.EdgeInsets.all(8),
-                              child: pw.Text('${item.quality} ${item.itemName}',
-                                  style: const pw.TextStyle(
-                                      fontSize: 10, color: PdfColors.black))),
-                          pw.Container(
-                              padding: const pw.EdgeInsets.all(8),
-                              child: pw.Text(item.qty.toStringAsFixed(2),
-                                  style: const pw.TextStyle(
-                                      fontSize: 10, color: PdfColors.black))),
-                          pw.Container(
-                              padding: const pw.EdgeInsets.all(8),
-                              child: pw.Text(numberFormat.format(int.parse(item.price)),
-                                  style: const pw.TextStyle(
-                                      fontSize: 10, color: PdfColors.black))),
-                          pw.Container(
-                              padding: const pw.EdgeInsets.all(8),
-                              child: pw.Text('${item.discount}%',
-                                  style: const pw.TextStyle(
-                                      fontSize: 10, color: PdfColors.black))),
-                          pw.Container(
-                              padding: const pw.EdgeInsets.all(8),
-                              child: pw.Text(numberFormat.format(double.parse(item.total)),
-                                  style: const pw.TextStyle(
-                                      fontSize: 10, color: PdfColors.black))),
-                        ],
-                      )),
+                      pw.Text('Invoice #${invoice.invoiceNumber}',
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 13,
+                              color: PdfColor.fromHex('#0D6EFD'))),
+                      pw.SizedBox(height: 6),
+                      pw.Text('Transaction Type:',
+                          style: pw.TextStyle(
+                              fontWeight: pw.FontWeight.bold,
+                              fontSize: 12,
+                              color: PdfColors.black)),
+                      pw.Text(invoice.type.toUpperCase(),
+                          style: const pw.TextStyle(fontSize: 12, color: PdfColors.black)),
                     ],
-                  ),
-                  pw.SizedBox(height: 25),
-                  pw.Container(
-                    alignment: pw.Alignment.centerRight,
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                          pw.Text('Subtotal:',
-                              style: pw.TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black)),
-                          pw.SizedBox(width: 15),
-                          pw.Text(numberFormat.format(invoice.subtotal),
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                        ]),
-                        pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                          pw.Text('Global Discount:',
-                              style: pw.TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black)),
-                          pw.SizedBox(width: 15),
-                          pw.Text('-${numberFormat.format(invoice.globalDiscount)}',
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.red)),
-                        ]),
-                        pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                          pw.Text('Total Amount:',
-                              style: pw.TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black)),
-                          pw.SizedBox(width: 15),
-                          pw.Text(numberFormat.format(invoice.total),
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                        ]),
-                        pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                          pw.Text('Amount Received:',
-                              style: pw.TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColors.black)),
-                          pw.SizedBox(width: 15),
-                          pw.Text(numberFormat.format(invoice.givenAmount),
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                        ]),
-                        if (invoice.returnAmount > 0)
-                          pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                            pw.Text('Change Due:',
-                                style: pw.TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: PdfColors.black)),
-                            pw.SizedBox(width: 15),
-                            pw.Text(numberFormat.format(invoice.returnAmount),
-                                style: const pw.TextStyle(fontSize: 10, color: PdfColors.green)),
-                          ]),
-                        if (invoice.balanceDue > 0)
-                          pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                            pw.Text('Balance Due:',
-                                style: pw.TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: pw.FontWeight.bold,
-                                    color: PdfColors.black)),
-                            pw.SizedBox(width: 15),
-                            pw.Text(numberFormat.format(invoice.balanceDue),
-                                style: const pw.TextStyle(fontSize: 10, color: PdfColors.orange)),
-                          ]),
-                        pw.SizedBox(height: 15),
-                        pw.Container(
-                          width: 250,
-                          padding: const pw.EdgeInsets.all(12),
-                          decoration: pw.BoxDecoration(
-                            color: PdfColor.fromHex('#F8F9FA'),
-                            borderRadius: pw.BorderRadius.circular(6),
-                            border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
-                          ),
-                          child: pw.Row(
-                            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                            children: [
-                              pw.Text('TOTAL AMOUNT',
-                                  style: pw.TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: pw.FontWeight.bold,
-                                      color: PdfColors.black)),
-                              pw.Text(numberFormat.format(invoice.total),
-                                  style: pw.TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: pw.FontWeight.bold,
-                                      color: PdfColor.fromHex('#0D6EFD'))),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),
-              pw.Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: pw.Container(
-                  width: double.infinity,
-                  padding: const pw.EdgeInsets.all(10),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#F8F9FA'),
-                    border: pw.Border(
-                      top: pw.BorderSide(color: PdfColor.fromHex('#0D6EFD'), width: 1),
-                    ),
-                  ),
-                  child: pw.Column(
-                    children: [
-                      pw.Text(
-                        'Thank you for choosing Popular Foam Center',
-                        style: pw.TextStyle(
-                          fontSize: 10,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#0D6EFD'),
-                        ),
-                      ),
-                      pw.SizedBox(height: 4),
-                      pw.Text('Contact: 0302-9596046 | Facebook: Popular Foam Center',
-                          style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
-                      pw.Text('Notes: Claims as per company policy',
-                          style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
-                    ],
-                  ),
+              pw.SizedBox(height: 20),
+            ],
+          ),
+          build: (context) => [
+            // Items Table
+            pw.Container(
+              decoration: pw.BoxDecoration(
+                borderRadius: const pw.BorderRadius.vertical(top: pw.Radius.circular(10)),
+                border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+              ),
+              child: pw.Table(
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(1),
+                  1: const pw.FlexColumnWidth(3.5),
+                  2: const pw.FlexColumnWidth(1.5),
+                  3: const pw.FlexColumnWidth(1),
+                  4: const pw.FlexColumnWidth(1.5),
+                  5: const pw.FlexColumnWidth(1),
+                  6: const pw.FlexColumnWidth(1.5),
+                },
+                border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                children: itemTableRows,
+              ),
+            ),
+            pw.SizedBox(height: 20),
+            // Totals Table
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 300,
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+                  borderRadius: pw.BorderRadius.circular(5),
+                ),
+                child: pw.Table(
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(2),
+                    1: const pw.FlexColumnWidth(1),
+                  },
+                  border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                  defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                  children: totalsTableRows,
                 ),
               ),
+            ),
+            pw.SizedBox(height: 12),
+            // Total Amount Highlight Box
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 220,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8F9FA'),
+                  borderRadius: pw.BorderRadius.circular(5),
+                  border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('TOTAL AMOUNT',
+                        style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black)),
+                    pw.Text(numberFormat.format(invoice.total),
+                        style: pw.TextStyle(
+                            fontSize: 13,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex('#0D6EFD'))),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          footer: (_) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(height: 20),
+              pw.Divider(thickness: 0.5, color: PdfColors.black),
+              pw.Text(
+                'Thankyou for choosing Popular Foam Center!',
+                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Contact: 0302-9596046 | FB: Popular Foam Center',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Claims as per policy',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.SizedBox(height: 10),
             ],
           ),
         ),
       );
 
       final pdfBytes = await pdf.save();
+      final String invoiceType = invoice.type.replaceAll(' ', '');
       await Printing.layoutPdf(
         onLayout: (_) => pdfBytes,
-        name: 'PFC-INV-${invoice.invoiceNumber}',
+        name: 'PFC-${invoiceType}-INV-${invoice.invoiceNumber}-A4',
       );
+      _showSnackBar('Invoice printed successfully!', Colors.green);
     } catch (e) {
       print('Error in _printInvoice: $e');
       _showSnackBar('Failed to print invoice: $e', Colors.red);
       rethrow;
     }
   }
-
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message),
@@ -1061,11 +1281,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
 
   Widget _buildCartItem(CartItem item, int index) {
     if (_focusNodes.length <= index) {
-      _focusNodes.add([
-        FocusNode(),
-        FocusNode(),
-        FocusNode(),
-      ]);
+      _focusNodes.add([FocusNode(), FocusNode(), FocusNode()]);
     }
 
     return GestureDetector(
@@ -1216,11 +1432,10 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       builder: (_, snapshot) {
         if (!snapshot.hasData) return const CircularProgressIndicator(strokeWidth: 2);
         final stock = (snapshot.data!.docs.first['stockQuantity'] as num?)?.toDouble() ?? 0.0;
-        final qty = item.qty;
         return Text(
             stock % 1 == 0 ? stock.toStringAsFixed(0) : stock.toStringAsFixed(1),
             style: TextStyle(
-                color: stock < qty ? Colors.red : Colors.green,
+                color: stock < item.qty ? Colors.red : Colors.green,
                 fontWeight: FontWeight.bold,
                 fontSize: 12));
       });
@@ -1269,11 +1484,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       HapticFeedback.heavyImpact();
       setState(() {
         _cartItems.insert(_deletedIndex!, _deletedItem!);
-        _focusNodes.insert(_deletedIndex!, [
-          FocusNode(),
-          FocusNode(),
-          FocusNode(),
-        ]);
+        _focusNodes.insert(_deletedIndex!, [FocusNode(), FocusNode(), FocusNode()]);
         _selectedItemIndex = _deletedIndex;
         _focusNodes[_selectedItemIndex!][_selectedFieldIndex].requestFocus();
         _showUndoToast = false;
@@ -1315,23 +1526,27 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
   }
 
   Widget _buildCustomerPanel() => Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-          color: _surfaceColor,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)]),
-      child: Column(children: [
+    padding: const EdgeInsets.all(24),
+    decoration: BoxDecoration(
+      color: _surfaceColor,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 24)],
+    ),
+    child: Column(
+      children: [
         if (!widget.isReadOnly)
           ElevatedButton.icon(
-              onPressed: _showAddItemDialog,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryColor,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 56),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
-              label: const Text('ADD ITEM',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+            onPressed: _showAddItemDialog,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryColor,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 56),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
+            label: const Text('ADD ITEM',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          ),
         if (!widget.isReadOnly) const SizedBox(height: 10),
         if (!widget.isReadOnly)
           Row(
@@ -1342,15 +1557,15 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                   setState(() {
                     _useCustomName = value!;
                     if (_useCustomName) {
+                      _customCustomerNameController.clear();
                       _selectedCustomer = {
                         'id': '',
-                        'name': _customCustomerNameController.text.trim().isEmpty
-                            ? 'Walking Customer'
-                            : _customCustomerNameController.text.trim(),
+                        'name': '',
                         'number': _phoneController.text.trim(),
                       };
                     } else {
                       _selectedCustomer = walkingCustomer;
+                      _customCustomerNameController.text = 'Walking Customer';
                     }
                   });
                 },
@@ -1368,7 +1583,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               filled: true,
               fillColor: _backgroundColor,
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
+              ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               labelStyle: TextStyle(color: _secondaryTextColor),
             ),
@@ -1378,7 +1595,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                 setState(() {
                   _selectedCustomer = {
                     'id': '',
-                    'name': value.trim().isEmpty ? 'Walking Customer' : value.trim(),
+                    'name': value.trim().isEmpty ? '' : value.trim(),
                     'number': _phoneController.text.trim(),
                   };
                 });
@@ -1391,24 +1608,28 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         _buildTransactionTypeDropdown(),
         const SizedBox(height: 16),
         TextField(
-            controller: _phoneController,
-            enabled: !widget.isReadOnly,
-            decoration: InputDecoration(
-                labelText: 'Phone Number',
-                filled: true,
-                fillColor: _backgroundColor,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                labelStyle: TextStyle(color: _secondaryTextColor)),
-            style: TextStyle(color: _textColor),
-            onChanged: (value) {
-              if (_useCustomName && !widget.isReadOnly) {
-                setState(() {
-                  _selectedCustomer['number'] = value.trim();
-                });
-              }
-            }),
+          controller: _phoneController,
+          enabled: !widget.isReadOnly,
+          decoration: InputDecoration(
+            labelText: 'Phone Number',
+            filled: true,
+            fillColor: _backgroundColor,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            labelStyle: TextStyle(color: _secondaryTextColor),
+          ),
+          style: TextStyle(color: _textColor),
+          onChanged: (value) {
+            if (_useCustomName && !widget.isReadOnly) {
+              setState(() {
+                _selectedCustomer['number'] = value.trim();
+              });
+            }
+          },
+        ),
         const SizedBox(height: 16),
         GestureDetector(
           onTap: () => _selectDate(context),
@@ -1435,16 +1656,20 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
         if (!widget.isReadOnly) const SizedBox(height: 24),
         if (!widget.isReadOnly)
           ElevatedButton.icon(
-              onPressed: _handleTransaction,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryColor,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 56),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 16)),
-              icon: const Icon(Icons.arrow_forward_rounded),
-              label: const Text('PROCEED TO PAYMENT'))
-      ]));
+            onPressed: _handleTransaction,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryColor,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 56),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            icon: const Icon(Icons.arrow_forward_rounded),
+            label: const Text('PROCEED TO PAYMENT'),
+          ),
+      ],
+    ),
+  );
 
   Widget _buildCustomerDropdown() => StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('customers').snapshots(),
@@ -1647,7 +1872,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                   child: TextButton.icon(
                     onPressed: () async {
                       try {
-                        final invoice = await _processTransaction(viewAfterSave: true);
+                        final invoice = await _processTransaction(viewAfterSave: false);
                         if (invoice != null) await _printInvoice(invoice);
                       } catch (e) {
                         _showSnackBar('Error during print & save: $e', Colors.red);
@@ -1666,7 +1891,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () async {
-                      await _processTransaction(viewAfterSave: true);
+                      await _processTransaction(viewAfterSave: false);
                     },
                     style: TextButton.styleFrom(
                       backgroundColor: _backgroundColor,

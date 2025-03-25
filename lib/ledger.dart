@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // For RawKeyboard
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:dropdown_search/dropdown_search.dart';
 
 // Import InvoiceViewScreen from the purchase invoice file
 // Adjust the path based on your project structure
@@ -68,6 +70,10 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   double _balanceAmount = 0.0;
   DateTime? _fromDate;
   DateTime? _toDate;
+
+  // FocusNode for the entire page and dropdown
+  final FocusNode _pageFocusNode = FocusNode();
+  final FocusNode _dropdownFocusNode = FocusNode();
 
   // Color Scheme matching the purchase invoice code
   Color get _primaryColor => const Color(0xFF0D6EFD);
@@ -258,7 +264,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     );
   }
 
-  // Method to navigate to InvoiceViewScreen
   void _viewInvoice(DocumentSnapshot invoiceDoc) {
     final invoice = invoiceDoc.data() as Map<String, dynamic>;
     Navigator.push(
@@ -273,96 +278,142 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     );
   }
 
+  KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
+    if (event is RawKeyDownEvent) {
+      print('Key pressed: ${event.logicalKey.keyLabel}'); // Debug log
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        _showSummaryBottomSheet(context);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+        setState(() {
+          _selectedCompanyId = null;
+          _selectedCompanyName = null;
+          _openingType = null;
+          _openingDate = null;
+          _balanceLimit = 0.0;
+          _balanceAmount = 0.0;
+          _fromDate = null;
+          _toDate = null;
+        });
+        return KeyEventResult.handled;
+      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
+        _dropdownFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Request focus on the page when it loads to ensure keyboard events are captured
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageFocusNode.dispose();
+    _dropdownFocusNode.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Text('Company Ledger', style: TextStyle(color: _textColor)),
-            const SizedBox(width: 16),
-            Expanded(child: _buildCompanyDropdown()),
-            const SizedBox(width: 16),
-            _buildDateFilterChip('From', _fromDate, true),
-            const SizedBox(width: 16),
-            _buildDateFilterChip('To', _toDate, false),
+    return Focus(
+      focusNode: _pageFocusNode,
+      onKey: _handleKeyEvent,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              Text('Company Ledger', style: TextStyle(color: _textColor)),
+              const SizedBox(width: 16),
+              Expanded(child: _buildCompanyDropdown()),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('From', _fromDate, true),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('To', _toDate, false),
+            ],
+          ),
+          backgroundColor: _backgroundColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: _textColor),
+          actions: [
+            IconButton(
+              icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              color: _textColor,
+              onPressed: widget.toggleDarkMode,
+            ),
           ],
         ),
         backgroundColor: _backgroundColor,
-        elevation: 0,
-        iconTheme: IconThemeData(color: _textColor),
-        actions: [
-          IconButton(
-            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-            color: _textColor,
-            onPressed: widget.toggleDarkMode,
-          ),
-        ],
-      ),
-      backgroundColor: _backgroundColor,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showSummaryBottomSheet(context),
-        backgroundColor: _primaryColor,
-        child: const Icon(Icons.info_outline, color: Colors.white),
-      ),
-      body: Column(
-        children: [
-          if (_selectedCompanyId != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: _buildOpeningBalanceCard(),
-            ),
-            Expanded(
-              child: StreamBuilder<List<DocumentSnapshot>>(
-                stream: _combinedTransactions,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(child: CircularProgressIndicator(color: _primaryColor));
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Text('No transactions found', style: TextStyle(color: _textColor)),
-                    );
-                  }
-
-                  return FutureBuilder<ProcessedData>(
-                    future: _processTransactions(snapshot.data!),
-                    builder: (context, asyncSnapshot) {
-                      if (asyncSnapshot.connectionState == ConnectionState.waiting) {
-                        return Center(child: CircularProgressIndicator(color: _primaryColor));
-                      }
-
-                      if (asyncSnapshot.hasError) {
-                        print('Error in FutureBuilder: ${asyncSnapshot.error}');
-                        return Center(
-                            child: Text('Error loading transactions',
-                                style: TextStyle(color: _textColor)));
-                      }
-
-                      final data = asyncSnapshot.data!;
-                      return Column(
-                        children: [
-                          _buildTableHeader(),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 24),
-                              itemCount: data.transactions.length,
-                              separatorBuilder: (context, index) => const SizedBox(height: 8),
-                              itemBuilder: (context, index) =>
-                                  _buildTransactionRow(data.transactions[index]),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showSummaryBottomSheet(context),
+          backgroundColor: _primaryColor,
+          child: const Icon(Icons.info_outline, color: Colors.white),
+        ),
+        body: Column(
+          children: [
+            if (_selectedCompanyId != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: _buildOpeningBalanceCard(),
               ),
-            ),
+              Expanded(
+                child: StreamBuilder<List<DocumentSnapshot>>(
+                  stream: _combinedTransactions,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: _primaryColor));
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: Text('No transactions found', style: TextStyle(color: _textColor)),
+                      );
+                    }
+
+                    return FutureBuilder<ProcessedData>(
+                      future: _processTransactions(snapshot.data!),
+                      builder: (context, asyncSnapshot) {
+                        if (asyncSnapshot.connectionState == ConnectionState.waiting) {
+                          return Center(child: CircularProgressIndicator(color: _primaryColor));
+                        }
+
+                        if (asyncSnapshot.hasError) {
+                          print('Error in FutureBuilder: ${asyncSnapshot.error}');
+                          return Center(
+                              child: Text('Error loading transactions',
+                                  style: TextStyle(color: _textColor)));
+                        }
+
+                        final data = asyncSnapshot.data!;
+                        return Column(
+                          children: [
+                            _buildTableHeader(),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                itemCount: data.transactions.length,
+                                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                                itemBuilder: (context, index) =>
+                                    _buildTransactionRow(data.transactions[index]),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -398,6 +449,8 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
           return const Text('No companies available');
         }
 
+        final companyList = snapshot.data!.docs;
+
         return Container(
           height: 56,
           decoration: BoxDecoration(
@@ -405,40 +458,112 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4)),
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
             ],
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              dropdownColor: _surfaceColor,
-              value: _selectedCompanyId,
-              hint: Text('Select company',
-                  style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
-              icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-              items: snapshot.data!.docs.map((company) {
-                return DropdownMenuItem<String>(
-                  value: company.id,
-                  child: Text(
-                    company['name'] ?? 'Unnamed',
-                    style: TextStyle(color: _textColor, fontSize: 14),
+          child: DropdownSearch<String>(
+            popupProps: PopupProps.menu(
+              showSearchBox: true,
+              showSelectedItems: true,
+              searchFieldProps: TextFieldProps(
+                focusNode: _dropdownFocusNode,
+                autofocus: true, // Automatically focus the search field when popup opens
+                decoration: InputDecoration(
+                  hintText: 'Search company...',
+                  hintStyle: TextStyle(color: _secondaryTextColor),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _primaryColor.withOpacity(0.3)),
                   ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: _primaryColor),
+                  ),
+                ),
+                style: TextStyle(color: _textColor),
+              ),
+              itemBuilder: (context, item, isSelected) => ListTile(
+                title: Text(
+                  item,
+                  style: TextStyle(
+                    color: isSelected ? _primaryColor : _textColor,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                selected: isSelected,
+                tileColor: isSelected ? _primaryColor.withOpacity(0.1) : _surfaceColor,
+              ),
+              menuProps: MenuProps(
+                backgroundColor: _surfaceColor,
+                elevation: 8,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              fit: FlexFit.loose,
+              constraints: const BoxConstraints(maxHeight: 300),
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                hintText: 'Select company',
+                hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              baseStyle: TextStyle(color: _textColor, fontSize: 14),
+            ),
+            dropdownBuilder: (context, selectedItem) {
+              return GestureDetector(
+                onTap: () {
+                  // Request focus on the dropdown field when clicked
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _dropdownFocusNode.requestFocus();
+                  });
+                },
+                child: Text(
+                  selectedItem ?? 'Select company',
+                  style: TextStyle(
+                    color: selectedItem != null ? _textColor : _secondaryTextColor,
+                    fontSize: 14,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            },
+            items: companyList.map((company) => company['name'] as String).toList(),
+            selectedItem: _selectedCompanyName,
+            onChanged: (String? value) async {
+              if (value == null) return;
+              final selectedCompany = companyList.firstWhere((company) => company['name'] == value);
+              setState(() {
+                _selectedCompanyId = selectedCompany.id;
+                _selectedCompanyName = selectedCompany['name'];
+                _openingType = selectedCompany['balance_type'] ?? 'N/A';
+                _openingDate = selectedCompany['balance_date'] ?? 'N/A';
+                _balanceLimit = (selectedCompany['balance_limit'] ?? 0).toDouble();
+                _balanceAmount = (selectedCompany['balance_amount'] ?? 0).toDouble();
+                print(
+                  'Company selected: $_selectedCompanyName (ID: $_selectedCompanyId), Balance: $_balanceAmount',
                 );
-              }).toList(),
-              onChanged: (value) async {
-                final company = await _companies.doc(value).get();
+              });
+            },
+            filterFn: (item, filter) => item.toLowerCase().contains(filter.toLowerCase()),
+            dropdownButtonProps: DropdownButtonProps(
+              icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+            ),
+            clearButtonProps: ClearButtonProps(
+              isVisible: true,
+              icon: Icon(Icons.clear, color: _primaryColor),
+              onPressed: () {
                 setState(() {
-                  _selectedCompanyId = value;
-                  _selectedCompanyName = company['name'];
-                  _openingType = company['balance_type'] ?? 'N/A';
-                  _openingDate = company['balance_date'] ?? 'N/A';
-                  _balanceLimit = (company['balance_limit'] ?? 0).toDouble();
-                  _balanceAmount = (company['balance_amount'] ?? 0).toDouble();
-                  print(
-                      'Company selected: $_selectedCompanyName (ID: $_selectedCompanyId), Balance: $_balanceAmount');
+                  _selectedCompanyId = null;
+                  _selectedCompanyName = null;
+                  _openingType = null;
+                  _openingDate = null;
+                  _balanceLimit = 0.0;
+                  _balanceAmount = 0.0;
                 });
               },
             ),
@@ -576,7 +701,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                 onTap: () => _viewInvoice(pt.doc),
                 child: _DataCell(
                   'Invoice ${pt.doc['invoiceId'] ?? 'N/A'}',
-                  color: _primaryColor, // Make it look clickable
+                  color: _primaryColor,
                 ),
               )
                   : FutureBuilder<DocumentSnapshot>(

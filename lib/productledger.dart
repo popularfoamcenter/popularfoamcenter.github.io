@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // For RawKeyboard
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:dropdown_search/dropdown_search.dart';
 
 // Assuming these files contain the required classes
 import 'pointofsale.dart'; // Replace with actual file path
-import 'purchaseinvoice.dart';   // Replace with actual file path
+import 'purchaseinvoice.dart'; // Replace with actual file path
 
 // Color Scheme (unchanged)
 const Color _primaryColor = Color(0xFF0D6EFD);
@@ -22,13 +24,12 @@ class ProcessedTransaction {
   final String docId;
   final String type;
   final String details;
-  final double received;
-  final double given;
-  final double returned;
+  final double inQty;
+  final double outQty;
   final double balance;
   final DateTime date;
 
-  ProcessedTransaction(this.docId, this.type, this.details, this.received, this.given, this.returned, this.balance, this.date);
+  ProcessedTransaction(this.docId, this.type, this.details, this.inQty, this.outQty, this.balance, this.date);
 }
 
 class ProductLedgerPage extends StatefulWidget {
@@ -44,22 +45,38 @@ class ProductLedgerPage extends StatefulWidget {
 class _ProductLedgerPageState extends State<ProductLedgerPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ScrollController _horizontalScrollController = ScrollController();
-  final double _mobileTableWidth = 1400; // Increased width to accommodate "Returned" column
+  final double _mobileTableWidth = 1200;
   String? _selectedQuality;
   String? _selectedItem;
   DateTime? _fromDate;
   DateTime? _toDate;
+
+  // FocusNodes for page and dropdowns
+  final FocusNode _pageFocusNode = FocusNode();
+  final FocusNode _qualityDropdownFocusNode = FocusNode();
+  final FocusNode _itemDropdownFocusNode = FocusNode();
 
   Color get _textColor => widget.isDarkMode ? _textColorDark : _textColorLight;
   Color get _secondaryTextColor => widget.isDarkMode ? _secondaryTextColorDark : _secondaryTextColorLight;
   Color get _backgroundColor => widget.isDarkMode ? _backgroundColorDark : _backgroundColorLight;
   Color get _surfaceColor => widget.isDarkMode ? _surfaceColorDark : _surfaceColorLight;
 
+  String _formatDouble(double value) {
+    if (value % 1 == 0) {
+      return value.toInt().toString();
+    } else {
+      return value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    }
+  }
+
   Future<List<ProcessedTransaction>> _fetchLedgerTransactions(String quality) async {
     List<ProcessedTransaction> transactions = [];
     double initialBalance = await _fetchOpeningBalance();
 
-    // Fetch and process all transactions without calculating balance yet
+    if (_selectedItem == null && _selectedQuality != null) {
+      return transactions;
+    }
+
     QuerySnapshot purchasesSnapshot = await _firestore.collection('purchaseinvoices').get();
     for (var purchase in purchasesSnapshot.docs) {
       var purchaseData = purchase.data() as Map<String, dynamic>;
@@ -74,7 +91,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       if (_toDate != null && date.isAfter(_toDate!)) continue;
 
       for (var item in items) {
-        if (item['quality'] == quality && (_selectedItem == null || item['name'] == _selectedItem)) {
+        if (item['quality'] == quality && item['name'] == _selectedItem) {
           double qty = item['quantity'] is String
               ? double.tryParse(item['quantity'] as String) ?? 0.0
               : (item['quantity'] as num?)?.toDouble() ?? 0.0;
@@ -86,8 +103,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               'Purchase #$invoiceId',
               qty,
               0.0,
-              0.0, // No returns here
-              0.0, // Placeholder balance
+              0.0,
               date,
             ));
           }
@@ -105,7 +121,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       if (_toDate != null && date.isAfter(_toDate!)) continue;
 
       for (var item in items) {
-        if (item['quality'] == quality && (_selectedItem == null || item['item'] == _selectedItem)) {
+        if (item['quality'] == quality && item['item'] == _selectedItem) {
           double qty = item['qty'] is String
               ? double.tryParse(item['qty'] as String) ?? 0.0
               : (item['qty'] as num?)?.toDouble() ?? 0.0;
@@ -117,8 +133,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               'Sale #$invoiceNumber',
               0.0,
               qty,
-              0.0, // No returns here
-              0.0, // Placeholder balance
+              0.0,
               date,
             ));
           }
@@ -126,7 +141,6 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       }
     }
 
-    // Fetch and process return transactions
     QuerySnapshot returnsSnapshot = await _firestore.collection('invoices').where('type', isEqualTo: 'Return').get();
     for (var returnDoc in returnsSnapshot.docs) {
       var returnData = returnDoc.data() as Map<String, dynamic>;
@@ -137,7 +151,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       if (_toDate != null && date.isAfter(_toDate!)) continue;
 
       for (var item in items) {
-        if (item['quality'] == quality && (_selectedItem == null || item['item'] == _selectedItem)) {
+        if (item['quality'] == quality && item['item'] == _selectedItem) {
           double qty = item['qty'] is String
               ? double.tryParse(item['qty'] as String) ?? 0.0
               : (item['qty'] as num?)?.toDouble() ?? 0.0;
@@ -147,10 +161,9 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               returnDoc.id,
               'Return',
               'Return #$returnNumber',
+              qty,
               0.0,
               0.0,
-              qty, // Returned quantity
-              0.0, // Placeholder balance
               date,
             ));
           }
@@ -158,57 +171,37 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       }
     }
 
-    // Sort transactions by date
     transactions.sort((a, b) => a.date.compareTo(b.date));
 
-    // Calculate running balance chronologically
     double runningBalance = initialBalance;
     List<ProcessedTransaction> updatedTransactions = [];
     for (var transaction in transactions) {
-      if (transaction.type == 'Purchase') {
-        runningBalance += transaction.received;
-      } else if (transaction.type == 'Sale') {
-        runningBalance -= transaction.given;
-      } else if (transaction.type == 'Return') {
-        runningBalance += transaction.returned; // Returns increase stock
-      }
+      runningBalance += transaction.inQty - transaction.outQty;
       updatedTransactions.add(ProcessedTransaction(
         transaction.docId,
         transaction.type,
         transaction.details,
-        transaction.received,
-        transaction.given,
-        transaction.returned,
+        transaction.inQty,
+        transaction.outQty,
         runningBalance,
         transaction.date,
       ));
     }
-    transactions = updatedTransactions; // Assign the updated list
-
-    // Debugging logs
-    print('Initial Balance: $initialBalance');
-    for (var transaction in transactions) {
-      print('Date: ${DateFormat('dd-MM-yyyy').format(transaction.date)}, Type: ${transaction.type}, '
-          'Received: ${transaction.received}, Given: ${transaction.given}, Returned: ${transaction.returned}, '
-          'Balance: ${transaction.balance}');
-    }
-
-    return transactions;
+    return updatedTransactions;
   }
 
   Future<double> _fetchOpeningBalance() async {
-    if (_selectedQuality == null) return 0.0;
+    if (_selectedQuality == null || _selectedItem == null) return 0.0;
 
     QuerySnapshot itemsSnapshot = await _firestore
         .collection('items')
         .where('qualityName', isEqualTo: _selectedQuality)
+        .where('itemName', isEqualTo: _selectedItem)
         .get();
 
     double totalOpeningBalance = 0.0;
     for (var itemDoc in itemsSnapshot.docs) {
       var itemData = itemDoc.data() as Map<String, dynamic>;
-      String itemName = itemData['itemName'] ?? 'Unknown';
-      if (_selectedItem != null && itemName != _selectedItem) continue;
       double stock = itemData['openingStock'] is String
           ? double.tryParse(itemData['openingStock'] as String) ?? 0.0
           : (itemData['openingStock'] as num?)?.toDouble() ?? 0.0;
@@ -218,25 +211,22 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
   }
 
   Future<Map<String, dynamic>> _calculateSummary() async {
-    if (_selectedQuality == null) return {'totalReceived': 0.0, 'totalGiven': 0.0, 'totalReturned': 0.0, 'finalBalance': 0.0};
+    if (_selectedQuality == null || _selectedItem == null) return {'totalIn': 0.0, 'totalOut': 0.0, 'finalBalance': 0.0};
 
     final transactions = await _fetchLedgerTransactions(_selectedQuality!);
-    double totalReceived = 0.0;
-    double totalGiven = 0.0;
-    double totalReturned = 0.0;
+    double totalIn = 0.0;
+    double totalOut = 0.0;
     double initialBalance = await _fetchOpeningBalance();
 
     for (var transaction in transactions) {
-      totalReceived += transaction.received;
-      totalGiven += transaction.given;
-      totalReturned += transaction.returned;
+      totalIn += transaction.inQty;
+      totalOut += transaction.outQty;
     }
-    double finalBalance = initialBalance + totalReceived - totalGiven + totalReturned;
+    double finalBalance = initialBalance + totalIn - totalOut;
 
     return {
-      'totalReceived': totalReceived,
-      'totalGiven': totalGiven,
-      'totalReturned': totalReturned,
+      'totalIn': totalIn,
+      'totalOut': totalOut,
       'finalBalance': finalBalance,
     };
   }
@@ -280,11 +270,10 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
                 return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
               }
 
-              final summary = snapshot.data ?? {'totalReceived': 0.0, 'totalGiven': 0.0, 'totalReturned': 0.0, 'finalBalance': 0.0};
+              final summary = snapshot.data ?? {'totalIn': 0.0, 'totalOut': 0.0, 'finalBalance': 0.0};
               return _buildSummaryFooter(
-                summary['totalReceived'] as double,
-                summary['totalGiven'] as double,
-                summary['totalReturned'] as double,
+                summary['totalIn'] as double,
+                summary['totalOut'] as double,
                 summary['finalBalance'] as double,
               );
             },
@@ -315,7 +304,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
             ),
           ),
         );
-      } else if (transaction.type == 'Sale' || transaction.type == 'Return') {
+      } else {
         DocumentSnapshot doc = await _firestore.collection('invoices').doc(transaction.docId).get();
         if (!doc.exists) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -342,51 +331,99 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     }
   }
 
+  KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
+    if (event is RawKeyDownEvent) {
+      print('Key pressed: ${event.logicalKey.keyLabel}');
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        _showSummaryBottomSheet(context);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+        setState(() {
+          _selectedQuality = null;
+          _selectedItem = null;
+          _fromDate = null;
+          _toDate = null;
+        });
+        return KeyEventResult.handled;
+      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
+        _qualityDropdownFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyI) {
+        if (_selectedQuality != null) {
+          _itemDropdownFocusNode.requestFocus();
+        }
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageFocusNode.dispose();
+    _qualityDropdownFocusNode.dispose();
+    _itemDropdownFocusNode.dispose();
+    _horizontalScrollController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = MediaQuery.of(context).size.width >= 1200;
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Text('Product Ledger', style: TextStyle(color: _textColor)),
-            const SizedBox(width: 16),
-            Expanded(child: _buildQualityDropdown()),
-            const SizedBox(width: 16),
-            Expanded(child: _buildItemDropdown()),
-            const SizedBox(width: 16),
-            _buildDateFilterChip('From', _fromDate, true),
-            const SizedBox(width: 16),
-            _buildDateFilterChip('To', _toDate, false),
+    return Focus(
+      focusNode: _pageFocusNode,
+      onKey: _handleKeyEvent,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              Text('Product Ledger', style: TextStyle(color: _textColor)),
+              const SizedBox(width: 16),
+              Expanded(child: _buildQualityDropdown()),
+              const SizedBox(width: 16),
+              Expanded(child: _buildItemDropdown()),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('From', _fromDate, true),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('To', _toDate, false),
+            ],
+          ),
+          backgroundColor: _backgroundColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: _textColor),
+          actions: [
+            IconButton(
+              icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              color: _textColor,
+              onPressed: widget.toggleDarkMode,
+            ),
           ],
         ),
         backgroundColor: _backgroundColor,
-        elevation: 0,
-        iconTheme: IconThemeData(color: _textColor),
-        actions: [
-          IconButton(
-            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-            color: _textColor,
-            onPressed: widget.toggleDarkMode,
-          ),
-        ],
-      ),
-      backgroundColor: _backgroundColor,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showSummaryBottomSheet(context),
-        backgroundColor: _primaryColor,
-        child: const Icon(Icons.info_outline, color: Colors.white),
-      ),
-      body: Column(
-        children: [
-          if (_selectedQuality != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: _buildOpeningBalanceCard(),
-            ),
-            Expanded(child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout()),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showSummaryBottomSheet(context),
+          backgroundColor: _primaryColor,
+          child: const Icon(Icons.info_outline, color: Colors.white),
+        ),
+        body: Column(
+          children: [
+            if (_selectedQuality != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: _buildOpeningBalanceCard(),
+              ),
+              Expanded(child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout()),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -407,8 +444,8 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
   );
 
   Widget _buildLedgerTable({required bool isDesktop}) {
-    if (_selectedQuality == null) {
-      return Center(child: Text('Please select a quality', style: TextStyle(color: _textColor)));
+    if (_selectedQuality == null || _selectedItem == null) {
+      return Center(child: Text('Please select a quality and item', style: TextStyle(color: _textColor)));
     }
 
     return FutureBuilder<List<ProcessedTransaction>>(
@@ -458,9 +495,8 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
         children: [
           isDesktop ? const Expanded(child: _HeaderCell('Date')) : const _HeaderCell('Date', 150),
           isDesktop ? const Expanded(flex: 2, child: _HeaderCell('Details')) : const _HeaderCell('Details', 300),
-          isDesktop ? const Expanded(child: _HeaderCell('Received')) : const _HeaderCell('Received', 150),
-          isDesktop ? const Expanded(child: _HeaderCell('Given')) : const _HeaderCell('Given', 150),
-          isDesktop ? const Expanded(child: _HeaderCell('Returned')) : const _HeaderCell('Returned', 150),
+          isDesktop ? const Expanded(child: _HeaderCell('In')) : const _HeaderCell('In', 150),
+          isDesktop ? const Expanded(child: _HeaderCell('Out')) : const _HeaderCell('Out', 150),
           isDesktop ? const Expanded(child: _HeaderCell('Balance')) : const _HeaderCell('Balance', 150),
         ],
       ),
@@ -485,60 +521,44 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
                 ? Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(transaction.date)))
                 : _DataCell(DateFormat('dd-MM-yyyy').format(transaction.date), 150),
             isDesktop
-                ? Expanded(
-              flex: 2,
-              child: _DataCell(transaction.details, null, _primaryColor), // Blue for invoices
-            )
-                : _DataCell(transaction.details, 300, _primaryColor), // Blue for invoices
+                ? Expanded(flex: 2, child: _DataCell(transaction.details, null, _primaryColor))
+                : _DataCell(transaction.details, 300, _primaryColor),
             isDesktop
                 ? Expanded(
               child: _DataCell(
-                transaction.received > 0 ? transaction.received.toStringAsFixed(0) : '-',
+                transaction.inQty > 0 ? _formatDouble(transaction.inQty) : '-',
                 null,
-                transaction.received > 0 ? Colors.green : _secondaryTextColor,
+                transaction.inQty > 0 ? Colors.green : _secondaryTextColor,
               ),
             )
                 : _DataCell(
-              transaction.received > 0 ? transaction.received.toStringAsFixed(0) : '-',
+              transaction.inQty > 0 ? _formatDouble(transaction.inQty) : '-',
               150,
-              transaction.received > 0 ? Colors.green : _secondaryTextColor,
+              transaction.inQty > 0 ? Colors.green : _secondaryTextColor,
             ),
             isDesktop
                 ? Expanded(
               child: _DataCell(
-                transaction.given > 0 ? transaction.given.toStringAsFixed(0) : '-',
+                transaction.outQty > 0 ? _formatDouble(transaction.outQty) : '-',
                 null,
-                transaction.given > 0 ? Colors.red : _secondaryTextColor,
+                transaction.outQty > 0 ? Colors.red : _secondaryTextColor,
               ),
             )
                 : _DataCell(
-              transaction.given > 0 ? transaction.given.toStringAsFixed(0) : '-',
+              transaction.outQty > 0 ? _formatDouble(transaction.outQty) : '-',
               150,
-              transaction.given > 0 ? Colors.red : _secondaryTextColor,
+              transaction.outQty > 0 ? Colors.red : _secondaryTextColor,
             ),
             isDesktop
                 ? Expanded(
               child: _DataCell(
-                transaction.returned > 0 ? transaction.returned.toStringAsFixed(0) : '-',
-                null,
-                transaction.returned > 0 ? Colors.orange : _secondaryTextColor, // Orange for returns
-              ),
-            )
-                : _DataCell(
-              transaction.returned > 0 ? transaction.returned.toStringAsFixed(0) : '-',
-              150,
-              transaction.returned > 0 ? Colors.orange : _secondaryTextColor,
-            ),
-            isDesktop
-                ? Expanded(
-              child: _DataCell(
-                transaction.balance.toStringAsFixed(0),
+                _formatDouble(transaction.balance),
                 null,
                 transaction.balance >= 0 ? Colors.green : Colors.red,
               ),
             )
                 : _DataCell(
-              transaction.balance.toStringAsFixed(0),
+              _formatDouble(transaction.balance),
               150,
               transaction.balance >= 0 ? Colors.green : Colors.red,
             ),
@@ -567,11 +587,12 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Product Details', style: GoogleFonts.roboto(color: _primaryColor, fontSize: 14, fontWeight: FontWeight.bold)),
+            Text('Product Details',
+                style: GoogleFonts.roboto(color: _primaryColor, fontSize: 14, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             _buildDetailRow('Quality', _selectedQuality ?? 'N/A'),
             if (_selectedItem != null) _buildDetailRow('Item', _selectedItem ?? 'N/A'),
-            _buildDetailRow('Opening Balance', openingBalance.toStringAsFixed(0)),
+            _buildDetailRow('Opening Balance', _formatDouble(openingBalance)),
           ],
         ),
       );
@@ -582,13 +603,16 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     padding: const EdgeInsets.symmetric(vertical: 2),
     child: Row(
       children: [
-        SizedBox(width: 100, child: Text(label, style: TextStyle(fontWeight: FontWeight.w500, color: _secondaryTextColor, fontSize: 12))),
+        SizedBox(
+            width: 100,
+            child: Text(label,
+                style: TextStyle(fontWeight: FontWeight.w500, color: _secondaryTextColor, fontSize: 12))),
         Expanded(child: Text(value, style: TextStyle(color: _textColor, fontSize: 12))),
       ],
     ),
   );
 
-  Widget _buildSummaryFooter(double totalReceived, double totalGiven, double totalReturned, double finalBalance) => Container(
+  Widget _buildSummaryFooter(double totalIn, double totalOut, double finalBalance) => Container(
     margin: const EdgeInsets.all(24),
     padding: const EdgeInsets.all(24),
     decoration: BoxDecoration(
@@ -601,9 +625,8 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildFooterColumn('Total Received', totalReceived, Colors.green),
-            _buildFooterColumn('Total Given', totalGiven, Colors.red),
-            _buildFooterColumn('Total Returned', totalReturned, Colors.orange),
+            _buildFooterColumn('Total In', totalIn, Colors.green),
+            _buildFooterColumn('Total Out', totalOut, Colors.red),
             _buildFooterColumn('Final Balance', finalBalance, finalBalance >= 0 ? Colors.green : Colors.red),
           ],
         ),
@@ -617,7 +640,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       Text(label, style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
       const SizedBox(height: 4),
       Text(
-        '${value.toStringAsFixed(0)}',
+        _formatDouble(value),
         style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
       ),
     ],
@@ -628,6 +651,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     builder: (context, snapshot) {
       if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
       final qualities = snapshot.data!.docs.map((doc) => doc['name'] as String).toList();
+
       return Container(
         height: 56,
         decoration: BoxDecoration(
@@ -636,21 +660,93 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            isExpanded: true,
-            dropdownColor: _surfaceColor,
-            value: _selectedQuality,
-            hint: Text('Select quality', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
-            icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-            items: qualities.map((quality) => DropdownMenuItem(
-              value: quality,
-              child: Text(quality, style: TextStyle(color: _textColor, fontSize: 14)),
-            )).toList(),
-            onChanged: (value) => setState(() {
+        child: DropdownSearch<String>(
+          popupProps: PopupProps.menu(
+            showSearchBox: true,
+            showSelectedItems: true,
+            searchFieldProps: TextFieldProps(
+              focusNode: _qualityDropdownFocusNode,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Search quality...',
+                hintStyle: TextStyle(color: _secondaryTextColor),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _primaryColor.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _primaryColor),
+                ),
+              ),
+              style: TextStyle(color: _textColor),
+            ),
+            itemBuilder: (context, item, isSelected) => ListTile(
+              title: Text(
+                item,
+                style: TextStyle(
+                  color: isSelected ? _primaryColor : _textColor,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+              selected: isSelected,
+              tileColor: isSelected ? _primaryColor.withOpacity(0.1) : _surfaceColor,
+            ),
+            menuProps: MenuProps(
+              backgroundColor: _surfaceColor,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            fit: FlexFit.loose,
+            constraints: const BoxConstraints(maxHeight: 300),
+          ),
+          dropdownDecoratorProps: DropDownDecoratorProps(
+            dropdownSearchDecoration: InputDecoration(
+              hintText: 'Select quality',
+              hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            baseStyle: TextStyle(color: _textColor, fontSize: 14),
+          ),
+          dropdownBuilder: (context, selectedItem) {
+            return GestureDetector(
+              onTap: () {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _qualityDropdownFocusNode.requestFocus();
+                });
+              },
+              child: Text(
+                selectedItem ?? 'Select quality',
+                style: TextStyle(
+                  color: selectedItem != null ? _textColor : _secondaryTextColor,
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          },
+          items: qualities,
+          selectedItem: _selectedQuality,
+          onChanged: (String? value) {
+            setState(() {
               _selectedQuality = value;
-              _selectedItem = null;
-            }),
+              _selectedItem = null; // Reset item when quality changes
+            });
+          },
+          filterFn: (item, filter) => item.toLowerCase().contains(filter.toLowerCase()),
+          dropdownButtonProps: DropdownButtonProps(
+            icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+          ),
+          clearButtonProps: ClearButtonProps(
+            isVisible: true,
+            icon: Icon(Icons.clear, color: _primaryColor),
+            onPressed: () {
+              setState(() {
+                _selectedQuality = null;
+                _selectedItem = null;
+              });
+            },
           ),
         ),
       );
@@ -666,16 +762,9 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
     ),
     padding: const EdgeInsets.symmetric(horizontal: 12),
-    child: DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        isExpanded: true,
-        dropdownColor: _surfaceColor,
-        value: null,
-        hint: Text('Select item', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
-        icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-        items: const [],
-        onChanged: null,
-      ),
+    child: Text(
+      'Select item',
+      style: TextStyle(color: _secondaryTextColor, fontSize: 14),
     ),
   )
       : StreamBuilder<QuerySnapshot>(
@@ -683,7 +772,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     builder: (context, snapshot) {
       if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
       final items = snapshot.data!.docs.map((doc) => doc['itemName'] as String).toList();
-      items.insert(0, 'All Items');
+
       return Container(
         height: 56,
         decoration: BoxDecoration(
@@ -692,18 +781,91 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            isExpanded: true,
-            dropdownColor: _surfaceColor,
-            value: _selectedItem,
-            hint: Text('Select item', style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
+        child: DropdownSearch<String>(
+          popupProps: PopupProps.menu(
+            showSearchBox: true,
+            showSelectedItems: true,
+            searchFieldProps: TextFieldProps(
+              focusNode: _itemDropdownFocusNode,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Search item...',
+                hintStyle: TextStyle(color: _secondaryTextColor),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _primaryColor.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: _primaryColor),
+                ),
+              ),
+              style: TextStyle(color: _textColor),
+            ),
+            itemBuilder: (context, item, isSelected) => ListTile(
+              title: Text(
+                item,
+                style: TextStyle(
+                  color: isSelected ? _primaryColor : _textColor,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
+              selected: isSelected,
+              tileColor: isSelected ? _primaryColor.withOpacity(0.1) : _surfaceColor,
+            ),
+            menuProps: MenuProps(
+              backgroundColor: _surfaceColor,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            fit: FlexFit.loose,
+            constraints: const BoxConstraints(maxHeight: 300),
+          ),
+          dropdownDecoratorProps: DropDownDecoratorProps(
+            dropdownSearchDecoration: InputDecoration(
+              hintText: 'Select item',
+              hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            baseStyle: TextStyle(color: _textColor, fontSize: 14),
+          ),
+          dropdownBuilder: (context, selectedItem) {
+            return GestureDetector(
+              onTap: () {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _itemDropdownFocusNode.requestFocus();
+                });
+              },
+              child: Text(
+                selectedItem ?? 'Select item',
+                style: TextStyle(
+                  color: selectedItem != null ? _textColor : _secondaryTextColor,
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          },
+          items: items,
+          selectedItem: _selectedItem,
+          onChanged: (String? value) {
+            setState(() {
+              _selectedItem = value;
+            });
+          },
+          filterFn: (item, filter) => item.toLowerCase().contains(filter.toLowerCase()),
+          dropdownButtonProps: DropdownButtonProps(
             icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-            items: items.map((item) => DropdownMenuItem(
-              value: item == 'All Items' ? null : item,
-              child: Text(item, style: TextStyle(color: _textColor, fontSize: 14)),
-            )).toList(),
-            onChanged: (value) => setState(() => _selectedItem = value),
+          ),
+          clearButtonProps: ClearButtonProps(
+            isVisible: true,
+            icon: Icon(Icons.clear, color: _primaryColor),
+            onPressed: () {
+              setState(() {
+                _selectedItem = null;
+              });
+            },
           ),
         ),
       );
@@ -716,7 +878,8 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       style: TextStyle(color: date != null ? _primaryColor : _secondaryTextColor, fontWeight: FontWeight.w500),
     ),
     backgroundColor: _surfaceColor,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: _primaryColor.withOpacity(0.3))),
+    shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12), side: BorderSide(color: _primaryColor.withOpacity(0.3))),
     onPressed: () => _selectDate(context, isFromDate),
   );
 }
@@ -743,7 +906,7 @@ class _HeaderCell extends StatelessWidget {
 class _DataCell extends StatelessWidget {
   final String text;
   final double? width;
-  final Color? color; // Added color parameter
+  final Color? color;
 
   const _DataCell(this.text, [this.width, this.color]);
 
@@ -756,7 +919,7 @@ class _DataCell extends StatelessWidget {
         child: Text(
           text,
           style: TextStyle(
-            color: color ?? (isDarkMode ? Colors.white : _textColorLight), // Use provided color or default
+            color: color ?? (isDarkMode ? Colors.white : _textColorLight),
             fontSize: 14,
           ),
           overflow: TextOverflow.ellipsis,

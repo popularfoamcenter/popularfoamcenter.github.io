@@ -6,7 +6,7 @@ import 'package:pfc/Inventory.dart';
 import 'package:pfc/accounts.dart';
 import 'package:pfc/cashregister.dart';
 import 'package:pfc/customers.dart';
-import 'package:pfc/ledger.dart'; // Assuming this contains CompanyLedgerPage and CustomerLedgerPage
+import 'package:pfc/ledger.dart';
 import 'package:pfc/pointofsale.dart';
 import 'package:pfc/purchaseinvoice.dart';
 import 'package:pfc/qualities.dart';
@@ -15,11 +15,11 @@ import 'package:pfc/transactionspage.dart';
 import 'package:pfc/vehicles.dart';
 import 'package:pfc/company.dart';
 import 'package:pfc/main.dart';
-import 'package:pfc/productledger.dart'; // Ensure this points to ProductLedgerPage
+import 'package:pfc/productledger.dart';
 import 'package:provider/provider.dart';
 import 'customerLedger.dart';
-import 'reports_landing.dart'; // Assuming StockValuationReportPage is in reports_landing.dart
-import 'profit&loss.dart'; // Add this import for ProfitAndLossPage
+import 'reports_landing.dart';
+import 'profit&loss.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -31,9 +31,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late Widget _currentPage;
   String _selectedButton = "Dashboard";
-  bool _isSidebarOpen = true;
   late int _darkModeState; // 0: Full light, 1: Sidebar dark, 2: Full dark
-  final double _sidebarWidth = 280;
+  final double _sidebarWidth = 200; // Reduced from 280 to minimize space
 
   // Color Scheme
   static const Color primaryBlue = Color(0xFF0D6EFD);
@@ -68,7 +67,7 @@ class _HomePageState extends State<HomePage> {
       {'icon': Icons.auto_graph, 'label': 'Stock Valuation Report', 'page': StockValuationReportPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
       {'icon': Icons.shopping_cart, 'label': 'Purchase Order', 'page': PurchaseOrdersPage(isDarkMode: _darkModeState == 2)},
       {'icon': Icons.add_shopping_cart, 'label': 'Purchase Invoice', 'page': const InvoiceListScreen()},
-      {'icon': Icons.bar_chart, 'label': 'Profit and Loss', 'page': ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)}, // Added ProfitAndLossPage
+      {'icon': Icons.bar_chart, 'label': 'Profit and Loss', 'page': ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)},
     ];
     _currentPage = _navigationItems[0]['page'] as Widget; // Default to Dashboard
   }
@@ -77,12 +76,6 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _currentPage = page;
       _selectedButton = label;
-    });
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarOpen = !_isSidebarOpen;
     });
   }
 
@@ -106,13 +99,12 @@ class _HomePageState extends State<HomePage> {
           return {'icon': item['icon'], 'label': item['label'], 'page': ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
         } else if (item['label'] == 'Stock Valuation Report') {
           return {'icon': item['icon'], 'label': item['label'], 'page': StockValuationReportPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
-        } else if (item['label'] == 'Profit and Loss') { // Added for ProfitAndLossPage
+        } else if (item['label'] == 'Profit and Loss') {
           return {'icon': item['icon'], 'label': item['label'], 'page': ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode)};
         }
         return item;
       }).toList();
 
-      // Update _currentPage based on _selectedButton
       if (_selectedButton == "Dashboard") {
         _currentPage = Dashboard(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Inventory") {
@@ -127,7 +119,7 @@ class _HomePageState extends State<HomePage> {
         _currentPage = ProductLedgerPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       } else if (_selectedButton == "Stock Valuation Report") {
         _currentPage = StockValuationReportPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
-      } else if (_selectedButton == "Profit and Loss") { // Added for ProfitAndLossPage
+      } else if (_selectedButton == "Profit and Loss") {
         _currentPage = ProfitAndLossPage(isDarkMode: _darkModeState == 2, toggleDarkMode: _toggleDarkMode);
       }
     });
@@ -272,39 +264,11 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: RichText(
-                                textAlign: TextAlign.center,
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: "Popular Foam ",
-                                      style: GoogleFonts.montserrat(
-                                        color: _darkModeState >= 1 ? Colors.white : textPrimary,
-                                        fontSize: screenWidth < 400 ? 16 : 18,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: "Centre",
-                                      style: GoogleFonts.montserrat(
-                                        color: primaryBlue,
-                                        fontSize: screenWidth < 400 ? 16 : 18,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                         const SizedBox(height: 8),
-                        _MobileNavIconItem(
+                        _MobileNavItem(
                           icon: _darkModeState == 0 ? Icons.dark_mode : Icons.light_mode,
+                          label: 'Dark Mode',
+                          isSelected: false,
                           onTap: _toggleDarkMode,
                           isDarkMode: _darkModeState >= 1,
                         ),
@@ -375,74 +339,32 @@ class _HomePageState extends State<HomePage> {
       data: _darkModeState == 2 ? _darkTheme() : _lightTheme(),
       child: Scaffold(
         backgroundColor: _darkModeState == 2 ? const Color(0xFF1A1A2F) : backgroundGray,
-        body: Stack(
+        body: Row(
           children: [
-            Row(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic,
-                  width: _isSidebarOpen ? _sidebarWidth : 0,
-                  child: OverflowBox(
-                    maxWidth: _sidebarWidth,
-                    alignment: Alignment.centerLeft,
-                    child: _buildNavigationRail(),
-                  ),
-                ),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: Container(
-                      key: ValueKey<Widget>(_currentPage),
-                      decoration: BoxDecoration(
-                        color: _darkModeState == 2 ? const Color(0xFF252541) : surfaceWhite,
-                        boxShadow: _isSidebarOpen
-                            ? [
-                          BoxShadow(
-                            color: _darkModeState >= 1 ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
-                            blurRadius: 16,
-                            spreadRadius: 2,
-                            offset: const Offset(4, 0),
-                          )
-                        ]
-                            : null,
-                      ),
-                      child: _currentPage,
-                    ),
-                  ),
-                ),
-              ],
+            SizedBox(
+              width: _sidebarWidth,
+              child: _buildNavigationRail(),
             ),
-            if (!_isSidebarOpen)
-              Positioned(
-                left: 0,
-                top: MediaQuery.of(context).size.height / 2 - 24,
-                child: GestureDetector(
-                  onTap: _toggleSidebar,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _darkModeState >= 1 ? const Color(0xFF252541) : surfaceWhite,
-                      borderRadius: const BorderRadius.only(
-                        topRight: Radius.circular(10),
-                        bottomRight: Radius.circular(10),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: Container(
+                  key: ValueKey<Widget>(_currentPage),
+                  decoration: BoxDecoration(
+                    color: _darkModeState == 2 ? const Color(0xFF252541) : surfaceWhite,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _darkModeState >= 1 ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                        offset: const Offset(4, 0),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _darkModeState >= 1 ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.1),
-                          blurRadius: 6,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.chevron_right,
-                      color: _darkModeState >= 1 ? Colors.white : textPrimary,
-                      size: 24,
-                    ),
+                    ],
                   ),
+                  child: _currentPage,
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -468,7 +390,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12), // Reduced padding
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(color: _darkModeState >= 1 ? Colors.grey[800]!.withOpacity(0.5) : backgroundGray.withOpacity(0.5)),
@@ -476,45 +398,11 @@ class _HomePageState extends State<HomePage> {
               ),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: RichText(
-                          overflow: TextOverflow.ellipsis,
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: "Popular Foam ",
-                                style: GoogleFonts.montserrat(
-                                  color: _darkModeState >= 1 ? Colors.white : textPrimary,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              TextSpan(
-                                text: "Centre",
-                                style: GoogleFonts.montserrat(
-                                  color: primaryBlue,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(_isSidebarOpen ? Icons.chevron_left : Icons.chevron_right),
-                        color: _darkModeState >= 1 ? Colors.white : textPrimary,
-                        onPressed: _toggleSidebar,
-                        splashRadius: 20,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _NavigationIconItem(
+                  const SizedBox(height: 12), // Reduced spacing
+                  _NavigationItem(
                     icon: _darkModeState == 0 ? Icons.dark_mode : Icons.light_mode,
+                    label: 'Dark Mode',
+                    isSelected: false,
                     onTap: _toggleDarkMode,
                     isDarkMode: _darkModeState >= 1,
                   ),
@@ -523,9 +411,9 @@ class _HomePageState extends State<HomePage> {
             ),
             Expanded(
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8), // Reduced padding
                 itemCount: _navigationItems.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, __) => const SizedBox(height: 6), // Reduced separator height
                 itemBuilder: (context, index) => _NavigationItem(
                   icon: _navigationItems[index]['icon'] as IconData,
                   label: _navigationItems[index]['label'] as String,
@@ -539,7 +427,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(16), // Reduced padding
               child: _NavigationItem(
                 icon: Icons.logout,
                 label: 'Logout',
@@ -687,7 +575,7 @@ class _NavigationItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8), // Reduced horizontal padding
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeInOut,
@@ -703,25 +591,28 @@ class _NavigationItem extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             hoverColor: _HomePageState.primaryBlue.withOpacity(0.05),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16), // Reduced padding
               child: Row(
                 children: [
                   Icon(
                     icon,
-                    size: 22,
+                    size: 20, // Slightly smaller icon
                     color: isSelected
                         ? _HomePageState.primaryBlue
                         : (isDarkMode ? Colors.white70 : _HomePageState.iconInactive),
                   ),
-                  const SizedBox(width: 16),
-                  Text(
-                    label,
-                    style: GoogleFonts.roboto(
-                      color: isSelected
-                          ? (isDarkMode ? Colors.white : _HomePageState.textPrimary)
-                          : (isDarkMode ? Colors.white70 : _HomePageState.textSecondary),
-                      fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  const SizedBox(width: 12), // Reduced spacing
+                  Expanded(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.roboto(
+                        color: isSelected
+                            ? (isDarkMode ? Colors.white : _HomePageState.textPrimary)
+                            : (isDarkMode ? Colors.white70 : _HomePageState.textSecondary),
+                        fontSize: 13, // Slightly smaller font
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
@@ -755,14 +646,14 @@ class _NavigationIconItem extends StatelessWidget {
         hoverColor: _HomePageState.primaryBlue.withOpacity(0.05),
         splashColor: _HomePageState.primaryBlue.withOpacity(0.1),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10), // Reduced padding
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             color: isDarkMode ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
           ),
           child: Icon(
             icon,
-            size: 22,
+            size: 20, // Slightly smaller icon
             color: isDarkMode ? Colors.white70 : _HomePageState.iconInactive,
           ),
         ),

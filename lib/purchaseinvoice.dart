@@ -209,7 +209,10 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
 
   Widget _buildDesktopLayout() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('purchaseinvoices').snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('purchaseinvoices')
+          .orderBy('invoiceDate', descending: true) // Sort by invoiceDate, newest first
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator(color: _primaryColor));
@@ -248,7 +251,6 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
       },
     );
   }
-
   Widget _buildMobileLayout() {
     return Scrollbar(
       controller: _horizontalScrollController,
@@ -265,6 +267,7 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
                 child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('purchaseinvoices')
+                      .orderBy('invoiceDate', descending: true) // Sort by invoiceDate, newest first
                       .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -304,7 +307,6 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
       ),
     );
   }
-
   Widget _buildDesktopHeader() {
     return Container(
       height: 56,

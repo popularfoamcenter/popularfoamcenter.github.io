@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // For RawKeyboard
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:dropdown_search/dropdown_search.dart';
 import 'pointofsale.dart'; // Assuming this contains Invoice class and PointOfSalePage
 
 class ProcessedTransaction {
@@ -70,6 +72,10 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
   DateTime? _fromDate;
   DateTime? _toDate;
 
+  // FocusNode for the page and dropdown
+  final FocusNode _pageFocusNode = FocusNode();
+  final FocusNode _dropdownFocusNode = FocusNode();
+
   Color get _primaryColor => const Color(0xFF0D6EFD);
   Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
   Color get _secondaryTextColor =>
@@ -83,6 +89,17 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
   void initState() {
     super.initState();
     _loadCustomers();
+    // Request focus on the page when it loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageFocusNode.dispose();
+    _dropdownFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCustomers() async {
@@ -297,7 +314,6 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
         print('Invalid invoice timestamp for ${doc.id}: $timestamp');
         return null;
       }
-      // For cash registers, use 'date' or 'created_at' as fallback
       final dateField = doc['date'] ?? doc['created_at'];
       if (dateField is Timestamp) {
         return dateField.toDate();
@@ -375,6 +391,28 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
     );
   }
 
+  KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
+    if (event is RawKeyDownEvent) {
+      print('Key pressed: ${event.logicalKey.keyLabel}');
+      if (event.logicalKey == LogicalKeyboardKey.enter) {
+        _showSummaryBottomSheet(context);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+        setState(() {
+          _selectedCustomerId = null;
+          _selectedCustomerData = null;
+          _fromDate = null;
+          _toDate = null;
+        });
+        return KeyEventResult.handled;
+      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
+        _dropdownFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   Widget _buildCustomerDropdown() {
     if (_isLoadingCustomers) {
       print('Customer dropdown is loading...');
@@ -450,37 +488,104 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isExpanded: true,
-          dropdownColor: _surfaceColor,
-          value: _selectedCustomerId,
-          hint:
-          Text('Select Customer', style: TextStyle(color: _secondaryTextColor)),
-          icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-          items: _customersList.map((customer) {
-            return DropdownMenuItem<String>(
-              value: customer['id'],
-              child: Text(
-                customer['name'] ?? 'Unnamed Customer',
-                style: TextStyle(color: _textColor, fontSize: 14),
+      child: DropdownSearch<String>(
+        popupProps: PopupProps.menu(
+          showSearchBox: true,
+          showSelectedItems: true,
+          searchFieldProps: TextFieldProps(
+            focusNode: _dropdownFocusNode,
+            autofocus: true, // Automatically focus the search field when popup opens
+            decoration: InputDecoration(
+              hintText: 'Search customer...',
+              hintStyle: TextStyle(color: _secondaryTextColor),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: _primaryColor.withOpacity(0.3)),
               ),
-            );
-          }).toList(),
-          onChanged: (value) async {
-            final customer = await _customers.doc(value).get();
-            print('Selected customer ID: $value, Name: ${customer['name']}');
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: _primaryColor),
+              ),
+            ),
+            style: TextStyle(color: _textColor),
+          ),
+          itemBuilder: (context, item, isSelected) => ListTile(
+            title: Text(
+              item,
+              style: TextStyle(
+                color: isSelected ? _primaryColor : _textColor,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+            selected: isSelected,
+            tileColor: isSelected ? _primaryColor.withOpacity(0.1) : _surfaceColor,
+          ),
+          menuProps: MenuProps(
+            backgroundColor: _surfaceColor,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          fit: FlexFit.loose,
+          constraints: const BoxConstraints(maxHeight: 300),
+        ),
+        dropdownDecoratorProps: DropDownDecoratorProps(
+          dropdownSearchDecoration: InputDecoration(
+            hintText: 'Select customer',
+            hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+          baseStyle: TextStyle(color: _textColor, fontSize: 14),
+        ),
+        dropdownBuilder: (context, selectedItem) {
+          return GestureDetector(
+            onTap: () {
+              // Request focus on the dropdown field when clicked
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _dropdownFocusNode.requestFocus();
+              });
+            },
+            child: Text(
+              selectedItem ?? 'Select customer',
+              style: TextStyle(
+                color: selectedItem != null ? _textColor : _secondaryTextColor,
+                fontSize: 14,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        },
+        items: _customersList.map((customer) => customer['name'] as String).toList(),
+        selectedItem: _selectedCustomerData?['name'],
+        onChanged: (String? value) async {
+          if (value == null) return;
+          final customerData = _customersList.firstWhere((customer) => customer['name'] == value);
+          final customerDoc = await _customers.doc(customerData['id']).get();
+          print('Selected customer ID: ${customerData['id']}, Name: ${customerDoc['name']}');
+          setState(() {
+            _selectedCustomerId = customerData['id'];
+            _selectedCustomerData = {
+              'id': customerDoc.id,
+              'name': customerDoc['name'] ?? 'Unnamed Customer',
+              'number': customerDoc['number'] ?? '',
+              'address': customerDoc['address'] ?? '',
+              'balanceAmount': (customerDoc['balanceAmount'] ?? 0.0).toDouble(),
+              'balanceType': customerDoc['balanceType'] ?? 'N/A',
+            };
+            print('Customer data: $_selectedCustomerData');
+          });
+        },
+        filterFn: (item, filter) => item.toLowerCase().contains(filter.toLowerCase()),
+        dropdownButtonProps: DropdownButtonProps(
+          icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+        ),
+        clearButtonProps: ClearButtonProps(
+          isVisible: true,
+          icon: Icon(Icons.clear, color: _primaryColor),
+          onPressed: () {
             setState(() {
-              _selectedCustomerId = value;
-              _selectedCustomerData = {
-                'id': customer.id,
-                'name': customer['name'] ?? 'Unnamed Customer',
-                'number': customer['number'] ?? '',
-                'address': customer['address'] ?? '',
-                'balanceAmount': (customer['balanceAmount'] ?? 0.0).toDouble(),
-                'balanceType': customer['balanceType'] ?? 'N/A',
-              };
-              print('Customer data: $_selectedCustomerData');
+              _selectedCustomerId = null;
+              _selectedCustomerData = null;
             });
           },
         ),
@@ -808,97 +913,101 @@ class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Text('Customer Ledger', style: TextStyle(color: _textColor)),
-            const SizedBox(width: 16),
-            Expanded(child: _buildCustomerDropdown()),
-            const SizedBox(width: 16),
-            _buildDateFilterChip('From', _fromDate, true),
-            const SizedBox(width: 16),
-            _buildDateFilterChip('To', _toDate, false),
+    return Focus(
+      focusNode: _pageFocusNode,
+      onKey: _handleKeyEvent,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              Text('Customer Ledger', style: TextStyle(color: _textColor)),
+              const SizedBox(width: 16),
+              Expanded(child: _buildCustomerDropdown()),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('From', _fromDate, true),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('To', _toDate, false),
+            ],
+          ),
+          backgroundColor: _backgroundColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: _textColor),
+          actions: [
+            IconButton(
+              icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              color: _textColor,
+              onPressed: widget.toggleDarkMode,
+            ),
           ],
         ),
         backgroundColor: _backgroundColor,
-        elevation: 0,
-        iconTheme: IconThemeData(color: _textColor),
-        actions: [
-          IconButton(
-            icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-            color: _textColor,
-            onPressed: widget.toggleDarkMode,
-          ),
-        ],
-      ),
-      backgroundColor: _backgroundColor,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showSummaryBottomSheet(context),
-        backgroundColor: _primaryColor,
-        child: const Icon(Icons.info_outline, color: Colors.white),
-      ),
-      body: Column(
-        children: [
-          if (_selectedCustomerId != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: _buildCustomerDetails(),
-            ),
-            Expanded(
-              child: StreamBuilder<List<DocumentSnapshot>>(
-                stream: _combinedTransactions,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(child: CircularProgressIndicator(color: _primaryColor));
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Text('No transactions found',
-                          style: TextStyle(color: _textColor)),
-                    );
-                  }
-
-                  return FutureBuilder<ProcessedData>(
-                    future: _processTransactions(snapshot.data!),
-                    builder: (context, asyncSnapshot) {
-                      if (asyncSnapshot.connectionState == ConnectionState.waiting) {
-                        return Center(child: CircularProgressIndicator(color: _primaryColor));
-                      }
-
-                      if (asyncSnapshot.hasError) {
-                        print('Error in FutureBuilder: ${asyncSnapshot.error}');
-                        return Center(
-                          child: Text('Error loading transactions',
-                              style: TextStyle(color: _textColor)),
-                        );
-                      }
-
-                      final data = asyncSnapshot.data!;
-                      return Column(
-                        children: [
-                          _buildTableHeader(),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: ListView.separated(
-                              padding: const EdgeInsets.symmetric(horizontal: 24),
-                              itemCount: data.transactions.length,
-                              separatorBuilder: (context, index) =>
-                              const SizedBox(height: 8),
-                              itemBuilder: (context, index) =>
-                                  _buildTransactionRow(data.transactions[index]),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showSummaryBottomSheet(context),
+          backgroundColor: _primaryColor,
+          child: const Icon(Icons.info_outline, color: Colors.white),
+        ),
+        body: Column(
+          children: [
+            if (_selectedCustomerId != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: _buildCustomerDetails(),
               ),
-            ),
+              Expanded(
+                child: StreamBuilder<List<DocumentSnapshot>>(
+                  stream: _combinedTransactions,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: _primaryColor));
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: Text('No transactions found',
+                            style: TextStyle(color: _textColor)),
+                      );
+                    }
+
+                    return FutureBuilder<ProcessedData>(
+                      future: _processTransactions(snapshot.data!),
+                      builder: (context, asyncSnapshot) {
+                        if (asyncSnapshot.connectionState == ConnectionState.waiting) {
+                          return Center(child: CircularProgressIndicator(color: _primaryColor));
+                        }
+
+                        if (asyncSnapshot.hasError) {
+                          print('Error in FutureBuilder: ${asyncSnapshot.error}');
+                          return Center(
+                            child: Text('Error loading transactions',
+                                style: TextStyle(color: _textColor)),
+                          );
+                        }
+
+                        final data = asyncSnapshot.data!;
+                        return Column(
+                          children: [
+                            _buildTableHeader(),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                itemCount: data.transactions.length,
+                                separatorBuilder: (context, index) =>
+                                const SizedBox(height: 8),
+                                itemBuilder: (context, index) =>
+                                    _buildTransactionRow(data.transactions[index]),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

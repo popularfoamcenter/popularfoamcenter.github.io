@@ -281,7 +281,10 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
 
   Widget _buildDesktopLayout() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('purchase_orders')
+          .orderBy('order_date', descending: true) // Sort by order_date, newest first
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator(color: _primaryColor));
@@ -320,7 +323,6 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
       },
     );
   }
-
   Widget _buildMobileLayout() {
     return Scrollbar(
       controller: _horizontalScrollController,
@@ -335,8 +337,10 @@ class _PurchaseOrdersPageState extends State<PurchaseOrdersPage> {
               _buildMobileHeader(),
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
-                  stream:
-                  FirebaseFirestore.instance.collection('purchase_orders').snapshots(),
+                  stream: FirebaseFirestore.instance
+                      .collection('purchase_orders')
+                      .orderBy('order_date', descending: true) // Sort by order_date, newest first
+                      .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Center(
@@ -774,10 +778,77 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
           ? (widget.existingOrder['order_date'] as Timestamp).toDate()
           : DateTime.now();
 
+      final sortedItems = List<OrderItem>.from(widget.items)
+        ..sort((a, b) {
+          final qualityComparison = a.quality.toLowerCase().compareTo(b.quality.toLowerCase());
+          if (qualityComparison != 0) return qualityComparison;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+
+      final List<pw.TableRow> itemTableRows = [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+          children: [
+            'Sr No',
+            'Description',
+            'Pack Unit',
+            'Qty',
+            if (withValuation) 'Unit Price',
+            if (withValuation) 'Disc.%',
+            if (withValuation) 'Total',
+            'Comments',
+          ].map((text) => pw.Container(
+            padding: const pw.EdgeInsets.all(5),
+            alignment: text == 'Description' ? pw.Alignment.centerLeft : pw.Alignment.center,
+            child: pw.Text(text,
+                style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 10,
+                    fontWeight: pw.FontWeight.bold)),
+          )).toList(),
+        ),
+        ...sortedItems.asMap().entries.map((entry) {
+          final int index = entry.key + 1;
+          final item = entry.value;
+          final qtyString = item.quantity % 1 == 0 ? item.quantity.toString() : item.quantity.toStringAsFixed(2);
+          return pw.TableRow(
+            children: [
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(index.toString(), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerLeft, child: pw.Text('${item.quality}   ${item.name}', style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(item.packagingUnit, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(qtyString, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              if (withValuation) pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(numberFormat.format(item.price), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              if (withValuation) pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text('${item.discount}%', style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              if (withValuation) pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(numberFormat.format(item.quantity * item.price * (1 - item.discount / 100)), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(itemComments['${item.name}-${item.quality}'] ?? '', style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+            ],
+          );
+        }),
+      ];
+
+      final List<pw.TableRow> totalsTableRows = [
+        if (withValuation) ...[
+          pw.TableRow(children: [
+            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text('Subtotal:', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text(numberFormat.format(widget.existingOrder['subtotal'] ?? 0), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ]),
+          pw.TableRow(children: [
+            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text('Tax (${widget.existingOrder['tax_percentage'] ?? '0'}%):', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text(numberFormat.format(widget.existingOrder['tax_amount'] ?? 0), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ]),
+          pw.TableRow(children: [
+            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text('Total Amount:', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text(numberFormat.format(widget.existingOrder['total_after_tax'] ?? 0), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+          ]),
+        ],
+      ];
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          header: (_) => pw.Column(
+          margin: const pw.EdgeInsets.all(25),
+          header: (context) => context.pageNumber == 1
+              ? pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Row(
@@ -788,23 +859,23 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
                     children: [
                       pw.Text('PURCHASE ORDER',
                           style: pw.TextStyle(
-                              fontSize: 24,
+                              fontSize: 22,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColor.fromHex('#0D6EFD'))),
-                      pw.SizedBox(height: 8),
+                      pw.SizedBox(height: 6),
                       pw.Text('Popular Foam Center',
                           style: pw.TextStyle(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColors.black)),
                       pw.Text('Zanana Hospital Road, Bahawalpur (63100)',
                           style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
                     ],
                   ),
-                  pw.Image(pw.MemoryImage(logoImage), width: 135, height: 135),
+                  pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
                 ],
               ),
-              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 40),
+              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
@@ -817,8 +888,8 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
                               fontSize: 12,
                               color: PdfColors.black)),
                       pw.Text(widget.existingOrder['company_name'] ?? 'N/A',
-                          style: const pw.TextStyle(fontSize: 14, color: PdfColors.black)),
-                      pw.SizedBox(height: 8),
+                          style: const pw.TextStyle(fontSize: 13, color: PdfColors.black)),
+                      pw.SizedBox(height: 6),
                       pw.Text('Order Date:',
                           style: pw.TextStyle(
                               fontWeight: pw.FontWeight.bold,
@@ -831,7 +902,7 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      pw.SizedBox(height: 8),
+                      pw.SizedBox(height: 6),
                       pw.Text('Vehicle:',
                           style: pw.TextStyle(
                               fontWeight: pw.FontWeight.bold,
@@ -843,205 +914,100 @@ class _ViewPurchaseOrderPageState extends State<ViewPurchaseOrderPage>
                   ),
                 ],
               ),
-              pw.SizedBox(height: 30),
+              pw.SizedBox(height: 20),
             ],
-          ),
-          footer: (_) => pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.all(10),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('#F8F9FA'),
-              border: pw.Border(
-                top: pw.BorderSide(color: PdfColor.fromHex('#0D6EFD'), width: 1),
-              ),
-            ),
-            child: pw.Column(
-              children: [
-                pw.Text(
-                  'Thank you for your business with Popular Foam Center',
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#0D6EFD'),
-                  ),
-                ),
-                pw.SizedBox(height: 4),
-                pw.Text('Contact: 0302-9596046 | Facebook: Popular Foam Center',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
-                pw.Text('Notes: Subject to company terms and conditions',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
-              ],
-            ),
-          ),
-          build: (pw.Context context) => [
+          )
+              : pw.SizedBox(), // Return an empty widget instead of null
+          build: (context) => [
             pw.Table(
               columnWidths: {
-                0: const pw.FlexColumnWidth(1.5),
-                1: const pw.FlexColumnWidth(1.5),
-                2: const pw.FlexColumnWidth(0.8),
-                3: const pw.FlexColumnWidth(0.8),
-                if (withValuation) 4: const pw.FlexColumnWidth(1.2),
-                if (withValuation) 5: const pw.FlexColumnWidth(1.0),
-                if (withValuation) 6: const pw.FlexColumnWidth(1.2),
+                0: const pw.FlexColumnWidth(1),
+                1: const pw.FlexColumnWidth(3.5),
+                2: const pw.FlexColumnWidth(1.5),
+                3: const pw.FlexColumnWidth(1),
+                if (withValuation) 4: const pw.FlexColumnWidth(1.5),
+                if (withValuation) 5: const pw.FlexColumnWidth(1),
+                if (withValuation) 6: const pw.FlexColumnWidth(1.5),
                 7: const pw.FlexColumnWidth(1.6),
               },
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-              children: [
-                pw.TableRow(
-                  decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
-                  children: [
-                    'Quality',
-                    'Item',
-                    'Cvrd',
-                    'Qty',
-                    if (withValuation) 'Price',
-                    if (withValuation) 'Disc.%',
-                    if (withValuation) 'Amount',
-                    'Comments',
-                  ].map((text) => pw.Container(
-                    padding: const pw.EdgeInsets.all(8),
-                    alignment: pw.Alignment.center,
-                    child: pw.Text(text,
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                            color: PdfColors.white,
-                            fontSize: 10,
-                            fontWeight: pw.FontWeight.bold)),
-                  )).toList(),
-                ),
-                ...widget.items.map((item) => pw.TableRow(
-                  children: [
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.quality,
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.name,
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.covered,
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.quantity.toString(),
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    if (withValuation)
-                      pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(numberFormat.format(item.price),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    if (withValuation)
-                      pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text('${item.discount}%',
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    if (withValuation)
-                      pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                              numberFormat.format(item.quantity * item.price * (1 - item.discount / 100)),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(itemComments['${item.name}-${item.quality}'] ?? '',
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                  ],
-                )),
-              ],
+              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+              defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+              children: itemTableRows,
             ),
-            pw.SizedBox(height: 25),
+            pw.SizedBox(height: 20),
             pw.Container(
               alignment: pw.Alignment.centerRight,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.end,
-                children: [
-                  if (withValuation) ...[
-                    pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Subtotal:',
-                          style: pw.TextStyle(
-                              fontSize: 10,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black)),
-                      pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(widget.existingOrder['subtotal'] ?? 0),
-                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                    ]),
-                    pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Tax (${widget.existingOrder['tax_percentage'] ?? '0'}%):',
-                          style: pw.TextStyle(
-                              fontSize: 10,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black)),
-                      pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(widget.existingOrder['tax_amount'] ?? 0),
-                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                    ]),
-                    pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Total Amount:',
-                          style: pw.TextStyle(
-                              fontSize: 10,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black)),
-                      pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(widget.existingOrder['total_after_tax'] ?? 0),
-                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                    ]),
+              child: pw.Container(
+                width: 220, // Aligned with total items container
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 0.5),
+                  borderRadius: pw.BorderRadius.circular(5),
+                ),
+                child: pw.Table(
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(2),
+                    1: const pw.FlexColumnWidth(1),
+                  },
+                  border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+                  defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                  children: totalsTableRows,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 220,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8F9FA'),
+                  borderRadius: pw.BorderRadius.circular(5),
+                  border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('TOTAL ITEMS',
+                        style: pw.TextStyle(
+                            fontSize: 12,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black)),
+                    pw.Text(sortedItems.fold(0, (sum, item) => sum + item.quantity).toString(),
+                        style: pw.TextStyle(
+                            fontSize: 13,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColor.fromHex('#0D6EFD'))),
                   ],
-                  pw.SizedBox(height: 15),
-                  pw.Container(
-                    width: 250,
-                    padding: const pw.EdgeInsets.all(12),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColor.fromHex('#F8F9FA'),
-                      borderRadius: pw.BorderRadius.circular(6),
-                      border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
-                    ),
-                    child: pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('TOTAL ITEMS',
-                            style: pw.TextStyle(
-                                fontSize: 12,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.black)),
-                        pw.Text(
-                            widget.items.fold(0, (sum, item) => sum + item.quantity).toString(),
-                            style: pw.TextStyle(
-                                fontSize: 14,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColor.fromHex('#0D6EFD'))),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
+          footer: (context) => context.pageNumber == context.pagesCount
+              ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(height: 20),
+              pw.Divider(thickness: 0.5, color: PdfColors.black),
+              pw.Text('Contact: 0302-9596046 | FB: Popular Foam Center',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  textAlign: pw.TextAlign.center),
+
+              pw.Text('Page ${context.pageNumber} of ${context.pagesCount}',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
+              pw.SizedBox(height: 10),
+            ],
+          )
+              : pw.Text('Page ${context.pageNumber} of ${context.pagesCount}',
+              style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+              textAlign: pw.TextAlign.center),
         ),
       );
 
       final pdfBytes = await pdf.save();
       await Printing.layoutPdf(
         onLayout: (_) => pdfBytes,
-        name: 'PFC-PO',
+        name: 'PFC-PO-${widget.orderId ?? DateTime.now().millisecondsSinceEpoch}-A4',
       );
     } catch (e) {
       print('Error in _printPurchaseOrder: $e');
@@ -1776,7 +1742,6 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     final bool withValuation = comments['withValuation'] as bool;
     final Map<String, String> itemComments = comments['comments'] as Map<String, String>;
 
-    // Parse the date string from _orderDateController into a DateTime
     DateTime parsedDate;
     try {
       parsedDate = DateFormat('dd-MM-yyyy').parse(_orderDateController.text);
@@ -1789,7 +1754,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
       'company_name': widget.companyName,
       'vehicle_name': widget.vehicleName,
       'vehicle_size': widget.vehicleSize,
-      'order_date': Timestamp.fromDate(parsedDate), // Store as Timestamp
+      'order_date': Timestamp.fromDate(parsedDate),
       'tax_percentage': double.tryParse(_taxController.text) ?? 0.5,
       'subtotal': _subtotal,
       'tax_amount': _total - _subtotal,
@@ -1801,20 +1766,65 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
     };
 
     try {
+      String orderId;
       if (widget.orderId != null) {
         await _firestore.collection('purchase_orders').doc(widget.orderId).update(orderData);
+        orderId = widget.orderId!;
       } else {
-        await _firestore.collection('purchase_orders').add(orderData);
+        final docRef = await _firestore.collection('purchase_orders').add(orderData);
+        orderId = docRef.id;
       }
 
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
       final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
 
+      final List<pw.TableRow> tableRows = [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+          children: [
+            'Quality',
+            'Item',
+            'Cvrd',
+            'Qty',
+            if (withValuation) 'Price',
+            if (withValuation) 'Disc.%',
+            if (withValuation) 'Amount',
+            'Comments',
+          ].map((text) => pw.Container(
+            padding: const pw.EdgeInsets.all(5),
+            alignment: pw.Alignment.center,
+            child: pw.Text(text,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                    color: PdfColors.white,
+                    fontSize: 10,
+                    fontWeight: pw.FontWeight.bold)),
+          )).toList(),
+        ),
+        ..._items.map((item) {
+          final qtyString = item.quantity % 1 == 0 ? item.quantity.toString() : item.quantity.toStringAsFixed(2);
+          return pw.TableRow(
+            children: [
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(item.quality, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(item.name, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(item.covered, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(qtyString, textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              if (withValuation) pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(numberFormat.format(item.price), textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              if (withValuation) pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text('${item.discount}%', textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              if (withValuation) pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(numberFormat.format(item.quantity * item.price * (1 - item.discount / 100)), textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+              pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.center, child: pw.Text(itemComments['${item.name}-${item.quality}'] ?? '', textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+            ],
+          );
+        }),
+      ];
+
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          header: (_) => pw.Column(
+          margin: const pw.EdgeInsets.all(25),
+          header: (context) => context.pageNumber == 1
+              ? pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Row(
@@ -1825,23 +1835,23 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                     children: [
                       pw.Text('PURCHASE ORDER',
                           style: pw.TextStyle(
-                              fontSize: 24,
+                              fontSize: 22,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColor.fromHex('#0D6EFD'))),
-                      pw.SizedBox(height: 8),
+                      pw.SizedBox(height: 6),
                       pw.Text('Popular Foam Center',
                           style: pw.TextStyle(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColors.black)),
                       pw.Text('Zanana Hospital Road, Bahawalpur (63100)',
                           style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
                     ],
                   ),
-                  pw.Image(pw.MemoryImage(logoImage), width: 135, height: 135),
+                  pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
                 ],
               ),
-              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 40),
+              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
@@ -1854,8 +1864,8 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                               fontSize: 12,
                               color: PdfColors.black)),
                       pw.Text(widget.companyName ?? 'N/A',
-                          style: const pw.TextStyle(fontSize: 14, color: PdfColors.black)),
-                      pw.SizedBox(height: 8),
+                          style: const pw.TextStyle(fontSize: 13, color: PdfColors.black)),
+                      pw.SizedBox(height: 6),
                       pw.Text('Order Date:',
                           style: pw.TextStyle(
                               fontWeight: pw.FontWeight.bold,
@@ -1868,7 +1878,7 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      pw.SizedBox(height: 8),
+                      pw.SizedBox(height: 6),
                       pw.Text('Vehicle:',
                           style: pw.TextStyle(
                               fontWeight: pw.FontWeight.bold,
@@ -1880,34 +1890,11 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                   ),
                 ],
               ),
-              pw.SizedBox(height: 30),
+              pw.SizedBox(height: 20),
             ],
-          ),
-          footer: (_) => pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.all(10),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('#F8F9FA'),
-              border: pw.Border(
-                top: pw.BorderSide(color: PdfColor.fromHex('#0D6EFD'), width: 1),
-              ),
-            ),
-            child: pw.Column(
-              children: [
-                pw.Text('Thank you for your business with Popular Foam Center',
-                    style: pw.TextStyle(
-                        fontSize: 10,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('#0D6EFD'))),
-                pw.SizedBox(height: 4),
-                pw.Text('Contact: 0302-9596046 | Facebook: Popular Foam Center',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
-                pw.Text('Notes: Subject to company terms and conditions',
-                    style: const pw.TextStyle(fontSize: 9, color: PdfColors.black)),
-              ],
-            ),
-          ),
-          build: (pw.Context context) => [
+          )
+              : pw.SizedBox(), // Return an empty widget instead of null
+          build: (context) => [
             pw.Table(
               columnWidths: {
                 0: const pw.FlexColumnWidth(1.5),
@@ -1920,132 +1907,68 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
                 7: const pw.FlexColumnWidth(1.6),
               },
               border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
-              children: [
-                pw.TableRow(
-                  decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
-                  children: [
-                    'Quality',
-                    'Item',
-                    'Cvrd',
-                    'Qty',
-                    if (withValuation) 'Price',
-                    if (withValuation) 'Disc.%',
-                    if (withValuation) 'Amount',
-                    'Comments',
-                  ].map((text) => pw.Container(
-                    padding: const pw.EdgeInsets.all(8),
-                    alignment: pw.Alignment.center,
-                    child: pw.Text(text,
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                            color: PdfColors.white,
-                            fontSize: 10,
-                            fontWeight: pw.FontWeight.bold)),
-                  )).toList(),
-                ),
-                ..._items.map((item) => pw.TableRow(
-                  children: [
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.quality,
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.name,
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.covered,
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(item.quantity.toString(),
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    if (withValuation)
-                      pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(numberFormat.format(item.price),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    if (withValuation)
-                      pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text('${item.discount}%',
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    if (withValuation)
-                      pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                              numberFormat.format(item.quantity * item.price * (1 - item.discount / 100)),
-                              textAlign: pw.TextAlign.center,
-                              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                    pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        alignment: pw.Alignment.center,
-                        child: pw.Text(itemComments['${item.name}-${item.quality}'] ?? '',
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
-                  ],
-                )),
-              ],
+              defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+              children: tableRows,
             ),
-            pw.SizedBox(height: 25),
+            pw.SizedBox(height: 20),
             pw.Container(
               alignment: pw.Alignment.centerRight,
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                 children: [
                   if (withValuation) ...[
-                    pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Subtotal:',
-                          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-                      pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(_subtotal),
-                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                    ]),
-                    pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Tax (${_taxController.text}%):',
-                          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-                      pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(_total - _subtotal),
-                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                    ]),
-                    pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                      pw.Text('Total Amount:',
-                          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-                      pw.SizedBox(width: 15),
-                      pw.Text(numberFormat.format(_total),
-                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black)),
-                    ]),
+                    pw.Container(
+                      width: 220, // Aligned with total items container
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: PdfColors.black, width: 0.5),
+                        borderRadius: pw.BorderRadius.circular(5),
+                      ),
+                      child: pw.Table(
+                        columnWidths: {
+                          0: const pw.FlexColumnWidth(2),
+                          1: const pw.FlexColumnWidth(1),
+                        },
+                        border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+                        defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                        children: [
+                          pw.TableRow(children: [
+                            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text('Subtotal:', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+                            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text(numberFormat.format(_subtotal), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                          ]),
+                          pw.TableRow(children: [
+                            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text('Tax (${_taxController.text}%):', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+                            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text(numberFormat.format(_total - _subtotal), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                          ]),
+                          pw.TableRow(children: [
+                            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text('Total Amount:', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black))),
+                            pw.Container(padding: const pw.EdgeInsets.all(5), alignment: pw.Alignment.centerRight, child: pw.Text(numberFormat.format(_total), style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
+                          ]),
+                        ],
+                      ),
+                    ),
                   ],
-                  pw.SizedBox(height: 15),
+                  pw.SizedBox(height: 12),
                   pw.Container(
-                    width: 250,
-                    padding: const pw.EdgeInsets.all(12),
+                    width: 220,
+                    padding: const pw.EdgeInsets.all(10),
                     decoration: pw.BoxDecoration(
                       color: PdfColor.fromHex('#F8F9FA'),
-                      borderRadius: pw.BorderRadius.circular(6),
+                      borderRadius: pw.BorderRadius.circular(5),
                       border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
                     ),
                     child: pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text('TOTAL ITEMS',
-                            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+                            style: pw.TextStyle(
+                                fontSize: 12,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black)),
                         pw.Text(_items.fold(0, (sum, item) => sum + item.quantity).toString(),
-                            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#0D6EFD'))),
+                            style: pw.TextStyle(
+                                fontSize: 13,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColor.fromHex('#0D6EFD'))),
                       ],
                     ),
                   ),
@@ -2053,13 +1976,31 @@ class _AddPurchaseItemsPageState extends State<AddPurchaseItemsPage> with Single
               ),
             ),
           ],
+          footer: (context) => context.pageNumber == context.pagesCount
+              ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(height: 20),
+              pw.Divider(thickness: 0.5, color: PdfColors.black),
+              pw.Text('Contact: 0302-9596046 | FB: Popular Foam Center',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  textAlign: pw.TextAlign.center),
+
+              pw.Text('Page ${context.pageNumber} of ${context.pagesCount}',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.black)),
+              pw.SizedBox(height: 10),
+            ],
+          )
+              : pw.Text('Page ${context.pageNumber} of ${context.pagesCount}',
+              style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+              textAlign: pw.TextAlign.center),
         ),
       );
 
       final pdfBytes = await pdf.save();
       await Printing.layoutPdf(
         onLayout: (_) => pdfBytes,
-        name: 'PFC-PO',
+        name: 'PFC-PO-${orderId}-A4',
       );
 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order saved and printed successfully!')));
