@@ -647,10 +647,10 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               // Logo
               pw.Image(
                 pw.MemoryImage(logoImage),
-                width: 100, // Adjust width to fit 80mm thermal print
-                height: 100, // Adjust height as needed
+                width: 100,
+                height: 100,
               ),
-              pw.SizedBox(height: 0), // Reduced from 10 to 2
+              pw.SizedBox(height: 0), // Reduced from 10 to 0
               pw.Text(
                 'Popular Foam Center',
                 style: pw.TextStyle(
@@ -676,7 +676,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               ),
               pw.SizedBox(height: 5),
 
-              // Transaction Info and Customer Section aligned
+              // Transaction Info and Customer Section with reduced gap
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -684,13 +684,24 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text(
-                        'INV #${invoice.invoiceNumber}',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: pw.CrossAxisAlignment.center,
+                        children: [
+                          pw.Text(
+                            'INV #${invoice.invoiceNumber}',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                          pw.SizedBox(width: 10), // Small horizontal space between invoice number and date
+                          pw.Text(
+                            DateFormat('dd-MMM-yy').format(invoiceDate),
+                            style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                          ),
+                        ],
                       ),
                       pw.SizedBox(height: 5),
                       pw.Text(
@@ -704,15 +715,11 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                         ),
                     ],
                   ),
-                  pw.Text(
-                    DateFormat('dd-MMM-yy').format(invoiceDate),
-                    style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
-                  ),
                 ],
               ),
               pw.SizedBox(height: 10),
 
-              // Items Table
+              // Items Table (unchanged)
               pw.Column(
                 children: [
                   pw.Row(
@@ -785,7 +792,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                           padding: const pw.EdgeInsets.symmetric(vertical: 4),
                           color: PdfColors.black,
                           child: pw.Text(
-                            'Total',
+                            'Total ',
                             style: const pw.TextStyle(
                               fontSize: 10,
                               color: PdfColors.white,
@@ -865,7 +872,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               ),
               pw.SizedBox(height: 10),
 
-              // Totals Section with Stars
+              // Totals Section with Stars (unchanged)
               pw.Text(
                 '******************************',
                 style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
@@ -888,7 +895,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               ),
               pw.SizedBox(height: 15),
 
-              // Footer
+              // Footer (unchanged)
               pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
