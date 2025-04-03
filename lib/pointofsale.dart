@@ -326,13 +326,12 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
       final newItem = CartItem(
         quality: qualityName,
         itemName: itemName,
-        covered: coveredStatus, // Already correctly fetching from inventoryItem
+        covered: coveredStatus,
         qty: 1.0,
         originalQty: 0.0,
         price: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
         discount: '0',
         total: ((inventoryItem['salePrice'] as num?) ?? 0).toStringAsFixed(0),
-        packagingUnit: inventoryItem['packagingUnit']?.toString().trim() ?? 'Unit', // Added packagingUnit
       );
 
       if (_selectedCustomer['id'] != 'walking' && !_useCustomName) {
@@ -618,182 +617,98 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
     final total = _calculateTotal();
     final givenAmount = double.tryParse(_givenAmountController.text) ?? 0.0;
     final originalType = widget.invoice?.type ?? _selectedTransactionType;
+
     final isEditing = widget.invoice != null;
     final invoiceRef = isEditing
         ? _firestore.collection('invoices').doc(widget.invoice!.id)
         : _firestore.collection('invoices').doc();
+    final invoiceNumber = isEditing ? widget.invoice!.invoiceNumber : 0;
 
-    // Step 1: Prepare data and run independent operations in parallel
-    final stockCheckFuture = _checkStockAvailabilityOptimized();
-    final invoiceNumberFuture = isEditing
-        ? Future.value(widget.invoice!.invoiceNumber)
-        : _incrementInvoiceCounter();
-
-    final results = await Future.wait([stockCheckFuture, invoiceNumberFuture]);
-    final hasLowStock = results[0] as bool;
-    final invoiceNumber = results[1] as int;
-
-    if (hasLowStock) {
-      final proceed = await _showLowStockDialog();
-      if (!proceed) return null;
-    }
-
-    // Step 2: Use a batch for stock updates and a transaction for invoice
-    final batch = _firestore.batch();
-    final customerData = _useCustomName
-        ? {
-      'id': '',
-      'name': _customCustomerNameController.text.trim().isEmpty
-          ? 'Walking Customer'
-          : _customCustomerNameController.text.trim(),
-      'number': _phoneController.text.trim()
-    }
-        : _selectedCustomer;
-
-    final tempInvoice = Invoice(
-      id: invoiceRef.id,
-      invoiceNumber: invoiceNumber,
-      customer: customerData,
-      type: _selectedTransactionType,
-      items: List.from(_cartItems),
-      subtotal: subtotal,
-      globalDiscount: _globalDiscount,
-      total: total,
-      givenAmount: givenAmount,
-      returnAmount: math.max(givenAmount - total, 0),
-      balanceDue: math.max(total - givenAmount, 0),
-      timestamp: Timestamp.fromDate(_selectedDate),
-    );
-
-    // Step 3: Handle stock updates with batch
-    await _updateStockOptimized(batch, originalType);
-
-    // Step 4: Commit invoice within a transaction
-    final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
-      if (isEditing) {
-        transaction.update(invoiceRef, tempInvoice.toMap());
-      } else {
-        transaction.set(invoiceRef, tempInvoice.toMap());
-      }
-      return tempInvoice;
-    });
-
-    // Step 5: Commit stock updates
-    await batch.commit();
-
-    // Step 6: Reset UI and notify user (unchanged)
-    setState(() {
-      _resetState();
-    });
-    _showSnackBar('Transaction ${isEditing ? 'updated' : 'saved'}', Colors.green);
-
-    if (viewAfterSave) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-            builder: (context) => PointOfSalePage(invoice: invoice, isReadOnly: true)),
-      );
-    }
-
-    return invoice;
-  }
-
-// Optimized stock availability check
-  Future<bool> _checkStockAvailabilityOptimized() async {
-    if (_selectedTransactionType == 'Order Booking') return false;
-
-    final itemKeys = _cartItems
-        .map((item) => {'itemName': item.itemName, 'quality': item.quality, 'qtyChange': item.qty - item.originalQty})
-        .toList();
-
-    // Batch fetch all items (assuming reasonable cart size; split if >10)
-    final List<QuerySnapshot> snapshots = [];
-    for (var i = 0; i < itemKeys.length; i += 10) {
-      final batch = itemKeys.sublist(i, math.min(i + 10, itemKeys.length));
-      final itemNames = batch.map((k) => k['itemName']).toList();
-      final snapshot = await _firestore
-          .collection('items')
-          .where('itemName', whereIn: itemNames)
-          .get();
-      snapshots.add(snapshot);
-    }
-
-    final itemMap = {
-      for (var snapshot in snapshots)
-        for (var doc in snapshot.docs)
-          '${doc['itemName']}-${doc['qualityName']}': (doc['stockQuantity'] as num?)?.toDouble() ?? 0.0
-    };
-
-    for (final item in itemKeys) {
-      final key = '${item['itemName']}-${item['quality']}';
-      final stock = itemMap[key] ?? 0.0;
-      final qtyChange = item['qtyChange'] as double;
-      if (_selectedTransactionType != 'Return' && qtyChange > 0 && stock < qtyChange) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-// Optimized stock update using batch
-  Future<void> _updateStockOptimized(WriteBatch batch, String originalType) async {
-    if (_selectedTransactionType == 'Order Booking') return;
-
-    final itemKeys = _cartItems
-        .map((item) => {'itemName': item.itemName, 'quality': item.quality, 'qtyChange': item.qty - item.originalQty})
-        .toList();
-
-    // Fetch all items in one go
-    final List<QuerySnapshot> snapshots = [];
-    for (var i = 0; i < itemKeys.length; i += 10) {
-      final batchKeys = itemKeys.sublist(i, math.min(i + 10, itemKeys.length));
-      final itemNames = batchKeys.map((k) => k['itemName']).toList();
-      final snapshot = await _firestore
-          .collection('items')
-          .where('itemName', whereIn: itemNames)
-          .get();
-      snapshots.add(snapshot);
-    }
-
-    final itemMap = {
-      for (var snapshot in snapshots)
-        for (var doc in snapshot.docs)
-          '${doc['itemName']}-${doc['qualityName']}': {'ref': doc.reference, 'stock': (doc['stockQuantity'] as num?)?.toDouble() ?? 0.0}
-    };
-
-    for (final item in itemKeys) {
-      final key = '${item['itemName']}-${item['quality']}';
-      final data = itemMap[key];
-      if (data == null) throw Exception('Item $key not found');
-      final ref = data['ref'] as DocumentReference;
-      final stock = data['stock'] as double;
-      final qtyChange = item['qtyChange'] as double;
-
-      if (qtyChange != 0) {
-        if (widget.invoice != null && originalType != _selectedTransactionType) {
-          final originalQtyChange = widget.invoice!.items
-              .firstWhere((i) => i.itemName == item['itemName'] && i.quality == item['quality'],
-              orElse: () => CartItem(
-                  quality: item['quality'] as String,
-                  itemName: item['itemName'] as String,
-                  qty: 0.0,
-                  originalQty: 0.0,
-                  price: '0',
-                  discount: '0',
-                  total: '0'))
-              .qty;
-          final originalAdjustment = originalType == 'Return' ? originalQtyChange : -originalQtyChange;
-          final newStockAfterRevert = stock + originalAdjustment;
-          final newAdjustment = _selectedTransactionType == 'Return' ? qtyChange : -qtyChange;
-          final newStock = newStockAfterRevert + newAdjustment;
-          if (newStock < 0) throw Exception('Insufficient stock for ${item['itemName']} after type change');
-          batch.update(ref, {'stockQuantity': newStock});
+    try {
+      final invoice = await _firestore.runTransaction<Invoice>((transaction) async {
+        if (isEditing) {
+          await _updateStockForEditedItems(transaction, originalType);
         } else {
-          final newStock = _selectedTransactionType == 'Return' ? stock + qtyChange : stock - qtyChange;
-          if (newStock < 0) throw Exception('Insufficient stock for ${item['itemName']}');
-          batch.update(ref, {'stockQuantity': newStock});
+          await _validateAndUpdateStock(transaction, originalType);
         }
+
+        final customerData = _useCustomName
+            ? {
+          'id': '',
+          'name': _customCustomerNameController.text.trim().isEmpty
+              ? 'Walking Customer'
+              : _customCustomerNameController.text.trim(),
+          'number': _phoneController.text.trim()
+        }
+            : _selectedCustomer;
+
+        final tempInvoice = Invoice(
+          id: invoiceRef.id,
+          invoiceNumber: invoiceNumber,
+          customer: customerData,
+          type: _selectedTransactionType,
+          items: List.from(_cartItems),
+          subtotal: subtotal,
+          globalDiscount: _globalDiscount,
+          total: total,
+          givenAmount: givenAmount,
+          returnAmount: math.max(givenAmount - total, 0),
+          balanceDue: math.max(total - givenAmount, 0),
+          timestamp: Timestamp.fromDate(_selectedDate),
+        );
+
+        if (isEditing) {
+          transaction.update(invoiceRef, tempInvoice.toMap());
+        } else {
+          transaction.set(invoiceRef, tempInvoice.toMap());
+        }
+
+        return tempInvoice;
+      });
+
+      Invoice finalInvoice = invoice;
+      if (!isEditing) {
+        final newInvoiceNumber = await _incrementInvoiceCounter();
+        final updatedInvoice = Invoice(
+          id: invoiceRef.id,
+          invoiceNumber: newInvoiceNumber,
+          customer: invoice.customer,
+          type: invoice.type,
+          items: invoice.items,
+          subtotal: invoice.subtotal,
+          globalDiscount: invoice.globalDiscount,
+          total: invoice.total,
+          givenAmount: invoice.givenAmount,
+          returnAmount: invoice.returnAmount,
+          balanceDue: invoice.balanceDue,
+          timestamp: Timestamp.fromDate(_selectedDate),
+        );
+        await invoiceRef.update({'invoiceNumber': newInvoiceNumber});
+        finalInvoice = updatedInvoice;
       }
+
+      // Reset all state after successful submission
+      setState(() {
+        _resetState();
+      });
+
+      _showSnackBar('Transaction ${isEditing ? 'updated' : 'saved'}', Colors.green);
+
+      if (viewAfterSave) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (context) => PointOfSalePage(invoice: finalInvoice, isReadOnly: true)),
+        );
+      } else {
+        // Stay on the current page, refreshed
+        setState(() {});
+      }
+
+      return finalInvoice;
+    } catch (e) {
+      _showSnackBar('Transaction failed: $e', Colors.red);
+      rethrow;
     }
   }
   Future<void> _printInvoice(Invoice invoice) async {
@@ -815,34 +730,36 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             .limit(1)
             .get();
         if (querySnapshot.docs.isNotEmpty) {
-          final data = querySnapshot.docs.first.data();
           packagingUnits['${item.itemName}-${item.quality}'] =
-          data['packagingUnit'] == 'Pieces' ? 'pcs' : (data['packagingUnit'] ?? 'Unit');
+              querySnapshot.docs.first.data()['packagingUnit'] ?? 'Unit';
         } else {
           packagingUnits['${item.itemName}-${item.quality}'] = 'Unit';
         }
       }
 
+      // Sort items by quality first, then itemName
       final sortedItems = List<CartItem>.from(invoice.items)
         ..sort((a, b) {
-          final aQuality = a.quality.toLowerCase();
-          final bQuality = b.quality.toLowerCase();
+          final aQuality = (a.quality).toLowerCase();
+          final bQuality = (b.quality).toLowerCase();
           final qualityComparison = aQuality.compareTo(bQuality);
           if (qualityComparison != 0) return qualityComparison;
-          final aName = a.itemName.toLowerCase();
-          final bName = b.itemName.toLowerCase();
+
+          final aName = (a.itemName).toLowerCase();
+          final bName = (b.itemName).toLowerCase();
           return aName.compareTo(bName);
         });
 
+      // Build items table rows with sorted items
       final List<pw.TableRow> itemTableRows = [
         pw.TableRow(
           decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
           children: [
             pw.Container(
-              width: 30, // Narrower Serial Number column
+              width: 30,
               padding: const pw.EdgeInsets.all(5),
               alignment: pw.Alignment.center,
-              child: pw.Text('Sr No',
+              child: pw.Text('Sr#',
                   style: pw.TextStyle(
                       color: PdfColors.white,
                       fontSize: 10,
@@ -858,7 +775,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                       fontWeight: pw.FontWeight.bold)),
             ),
             pw.Container(
-              width: 50, // New Cvrd column
+              width: 50,
               padding: const pw.EdgeInsets.all(5),
               alignment: pw.Alignment.center,
               child: pw.Text('Cvrd',
@@ -870,7 +787,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             pw.Container(
               padding: const pw.EdgeInsets.all(5),
               alignment: pw.Alignment.center,
-              child: pw.Text('Pack Unit',
+              child: pw.Text('Pkg',
                   style: pw.TextStyle(
                       color: PdfColors.white,
                       fontSize: 10,
@@ -918,7 +835,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
           final int index = entry.key + 1;
           final item = entry.value;
           final qtyString = item.qty % 1 == 0 ? item.qty.toInt().toString() : item.qty.toStringAsFixed(2);
-          final discountValue = double.tryParse(item.discount ?? '0') ?? 0.0;
+          final discountValue = double.tryParse(item.discount) ?? 0.0;
           final packagingUnit = packagingUnits['${item.itemName}-${item.quality}'] ?? 'Unit';
           return pw.TableRow(
             children: [
@@ -952,7 +869,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.center,
-                  child: pw.Text(numberFormat.format(double.parse(item.price ?? '0')),
+                  child: pw.Text(numberFormat.format(double.parse(item.price)),
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
@@ -962,13 +879,14 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
               pw.Container(
                   padding: const pw.EdgeInsets.all(5),
                   alignment: pw.Alignment.center,
-                  child: pw.Text(numberFormat.format(double.parse(item.total ?? '0')),
+                  child: pw.Text(numberFormat.format(double.parse(item.total)),
                       style: const pw.TextStyle(fontSize: 10, color: PdfColors.black))),
             ],
           );
         }),
       ];
 
+      // Build totals table rows
       final List<pw.TableRow> totalsTableRows = [
         pw.TableRow(
           children: [
@@ -1150,20 +1068,20 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             pw.Container(
               decoration: pw.BoxDecoration(
                 borderRadius: const pw.BorderRadius.vertical(top: pw.Radius.circular(10)),
-                border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+                border: pw.Border.all(color: PdfColors.black, width: 1),
               ),
               child: pw.Table(
                 columnWidths: {
-                  0: const pw.FixedColumnWidth(30), // Narrower Serial Number
-                  1: const pw.FlexColumnWidth(3.2), // Adjusted Description
-                  2: const pw.FixedColumnWidth(50), // New Cvrd column
-                  3: const pw.FlexColumnWidth(1.2), // Pack Unit
-                  4: const pw.FlexColumnWidth(1),   // Qty
-                  5: const pw.FlexColumnWidth(1.5), // Unit Price
-                  6: const pw.FlexColumnWidth(1),   // Disc.%
-                  7: const pw.FlexColumnWidth(1.5), // Total
+                  0: const pw.FixedColumnWidth(30),
+                  1: const pw.FlexColumnWidth(3.2),
+                  2: const pw.FixedColumnWidth(50),
+                  3: const pw.FlexColumnWidth(1.2),
+                  4: const pw.FlexColumnWidth(1),
+                  5: const pw.FlexColumnWidth(1.5),
+                  6: const pw.FlexColumnWidth(1),
+                  7: const pw.FlexColumnWidth(1.5),
                 },
-                border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                border: pw.TableBorder.all(color: PdfColors.black, width: 1),
                 defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
                 children: itemTableRows,
               ),
@@ -1172,9 +1090,9 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
             pw.Container(
               alignment: pw.Alignment.centerRight,
               child: pw.Container(
-                width: 300,
+                width: 220,
                 decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+                  border: pw.Border.all(color: PdfColors.black, width: 1),
                   borderRadius: pw.BorderRadius.circular(5),
                 ),
                 child: pw.Table(
@@ -1182,7 +1100,7 @@ class _PointOfSalePageState extends State<PointOfSalePage> {
                     0: const pw.FlexColumnWidth(2),
                     1: const pw.FlexColumnWidth(1),
                   },
-                  border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+                  border: pw.TableBorder.all(color: PdfColors.black, width: 1),
                   defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
                   children: totalsTableRows,
                 ),

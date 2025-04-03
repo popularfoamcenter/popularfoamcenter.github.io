@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'reports_landing.dart'; // Assuming StockValuationReportPage is here
+
+// Assuming this is the file where StockValuationReportPage is defined
+import 'reports_landing.dart';
 
 // Dashboard ViewModel for State Management
 class DashboardViewModel extends ChangeNotifier {
@@ -30,7 +32,7 @@ class DashboardViewModel extends ChangeNotifier {
   };
   List<Invoice> _recentSalesInvoices = [];
   List<Invoice> _recentPurchaseInvoices = [];
-  String _stockHistoryPeriod = '7 Days'; // Default period for stock history
+  String _stockHistoryPeriod = '7 Days';
 
   int get totalInventory => _totalInventory;
   double get totalStockValue => _totalStockValue;
@@ -53,7 +55,7 @@ class DashboardViewModel extends ChangeNotifier {
 
   void setStockHistoryPeriod(String period) {
     _stockHistoryPeriod = period;
-    _fetchStockHistory(); // Re-fetch stock history for the new period
+    _fetchStockHistory();
     notifyListeners();
   }
 
@@ -196,13 +198,11 @@ class DashboardViewModel extends ChangeNotifier {
     }
     final periodStart = now.subtract(Duration(days: days));
 
-    // Fetch sales invoices
     final salesInvoicesSnapshot = await FirebaseFirestore.instance
         .collection('invoices')
         .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(periodStart))
         .get();
 
-    // Fetch purchase invoices
     final purchaseInvoicesSnapshot = await FirebaseFirestore.instance
         .collection('purchaseinvoices')
         .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(periodStart))
@@ -213,7 +213,6 @@ class DashboardViewModel extends ChangeNotifier {
     int totalPurchaseItems = 0;
     int purchaseReturnItems = 0;
 
-    // Process sales invoices
     for (var doc in salesInvoicesSnapshot.docs) {
       final data = doc.data();
       final type = data['type'] as String? ?? 'Sale';
@@ -228,7 +227,6 @@ class DashboardViewModel extends ChangeNotifier {
       }
     }
 
-    // Process purchase invoices
     for (var doc in purchaseInvoicesSnapshot.docs) {
       final data = doc.data();
       final items = (data['items'] as List<dynamic>?)?.map((item) {
@@ -245,10 +243,8 @@ class DashboardViewModel extends ChangeNotifier {
       }).toList() ?? [];
 
       int itemCount = items.fold(0, (sum, item) => sum + item.qty.toInt());
-
       totalPurchaseItems += itemCount;
-      // Assuming purchase returns are not tracked in this dataset; set to 0 for now
-      purchaseReturnItems = 0; // Update this if purchase returns are available
+      purchaseReturnItems = 0; // Placeholder; update if data available
     }
 
     _stockHistory = {
@@ -257,12 +253,9 @@ class DashboardViewModel extends ChangeNotifier {
       'totalPurchaseItems': totalPurchaseItems,
       'purchaseReturnItems': purchaseReturnItems,
     };
-
-    notifyListeners();
   }
 
   Future<void> _fetchRecentInvoices() async {
-    // Fetch recent sales invoices
     final salesInvoicesSnapshot = await FirebaseFirestore.instance
         .collection('invoices')
         .orderBy('timestamp', descending: true)
@@ -273,7 +266,6 @@ class DashboardViewModel extends ChangeNotifier {
       return Invoice.fromMap(doc.id, doc.data());
     }).toList();
 
-    // Fetch recent purchase invoices
     final purchaseInvoicesSnapshot = await FirebaseFirestore.instance
         .collection('purchaseinvoices')
         .orderBy('createdAt', descending: true)
@@ -282,7 +274,6 @@ class DashboardViewModel extends ChangeNotifier {
 
     _recentPurchaseInvoices = purchaseInvoicesSnapshot.docs.map((doc) {
       final data = doc.data();
-      // Handle invoice date parsing for purchase invoices
       DateTime invoiceDate;
       try {
         if (data['createdAt'] is Timestamp) {
@@ -315,7 +306,7 @@ class DashboardViewModel extends ChangeNotifier {
           );
         }).toList() ?? [],
         subtotal: (data['subtotal'] as num?)?.toDouble() ?? 0.0,
-        globalDiscount: 0, // Purchase invoices may not have global discount
+        globalDiscount: 0,
         total: (data['total'] as num?)?.toDouble() ?? 0.0,
         givenAmount: (data['total'] as num?)?.toDouble() ?? 0.0,
         returnAmount: 0.0,
@@ -323,8 +314,6 @@ class DashboardViewModel extends ChangeNotifier {
         timestamp: Timestamp.fromDate(invoiceDate),
       );
     }).toList();
-
-    notifyListeners();
   }
 }
 
@@ -432,22 +421,14 @@ class Invoice {
       invoiceNumber: map['invoiceNumber'] ?? 0,
       customer: Map<String, dynamic>.from(map['customer'] ?? {}),
       type: map['type'] ?? 'Sale',
-      items: (map['items'] as List<dynamic>?)
-          ?.map((item) => CartItem.fromMap(item))
-          .toList() ??
-          [],
+      items: (map['items'] as List<dynamic>?)?.map((item) => CartItem.fromMap(item)).toList() ?? [],
       subtotal: (map['subtotal'] is num ? map['subtotal'].toDouble() : 0.0),
       globalDiscount: map['globalDiscount'] ?? 0,
       total: (map['total'] is num ? map['total'].toDouble() : 0.0),
       givenAmount: (map['givenAmount'] is num ? map['givenAmount'].toDouble() : 0.0),
       returnAmount: (map['returnAmount'] is num ? map['returnAmount'].toDouble() : 0.0),
       balanceDue: (map['balanceDue'] is num ? map['balanceDue'].toDouble() : 0.0),
-      timestamp: map['timestamp'] is Timestamp
-          ? map['timestamp'] as Timestamp
-          : (map['timestamp'] != null
-          ? Timestamp.fromDate(
-          DateTime.fromMillisecondsSinceEpoch(map['timestamp'].millisecondsSinceEpoch))
-          : null),
+      timestamp: map['timestamp'],
     );
   }
 }
@@ -466,82 +447,56 @@ class Dashboard extends StatelessWidget {
       child: Theme(
         data: isDarkMode ? _darkTheme() : _lightTheme(),
         child: Scaffold(
-          backgroundColor: isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA),
-          body: Consumer<DashboardViewModel>(
-            builder: (context, viewModel, child) => SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  DashboardHeader(isDarkMode: isDarkMode, onRefresh: viewModel.fetchData),
-                  const SizedBox(height: 24),
-                  MainMetricsRow(viewModel: viewModel, isDarkMode: isDarkMode, toggleDarkMode: toggleDarkMode)
-                      .animate()
-                      .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 200)),
-                  const SizedBox(height: 24),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TransactionSummary(viewModel: viewModel)
-                            .animate()
-                            .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 400)),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: BusyHoursGraph(viewModel: viewModel)
-                            .animate()
-                            .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 600)),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ProfitMetrics(viewModel: viewModel)
-                            .animate()
-                            .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 800)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: RecentInvoices(viewModel: viewModel)
-                            .animate()
-                            .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 1000)),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: StockHistory(viewModel: viewModel)
-                            .animate()
-                            .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 1200)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: CategoryGrid(viewModel: viewModel)
-                                .animate()
-                                .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 1400)),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: StockAlert(viewModel: viewModel)
-                                .animate()
-                                .fadeIn(duration: const Duration(milliseconds: 600), delay: const Duration(milliseconds: 1600)),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDarkMode
+                    ? [const Color(0xFF1A1A2F), const Color(0xFF2E2E48)]
+                    : [const Color(0xFFEFF3F6), const Color(0xFFDCE6F1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Consumer<DashboardViewModel>(
+              builder: (context, viewModel, child) => SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DashboardHeader(isDarkMode: isDarkMode, onRefresh: viewModel.fetchData),
+                    const SizedBox(height: 32),
+                    MainMetricsRow(viewModel: viewModel, isDarkMode: isDarkMode, toggleDarkMode: toggleDarkMode),
+                    const SizedBox(height: 32),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: TransactionSummary(viewModel: viewModel)),
+                        const SizedBox(width: 24),
+                        Expanded(child: BusyHoursGraph(viewModel: viewModel)),
+                        const SizedBox(width: 24),
+                        Expanded(child: ProfitMetrics(viewModel: viewModel)),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 2, child: RecentInvoices(viewModel: viewModel)),
+                        const SizedBox(width: 24),
+                        Expanded(child: StockHistory(viewModel: viewModel)),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 3, child: CategoryGrid(viewModel: viewModel)),
+                        const SizedBox(width: 24),
+                        Expanded(child: StockAlert(viewModel: viewModel)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -553,28 +508,26 @@ class Dashboard extends StatelessWidget {
   ThemeData _lightTheme() {
     return ThemeData(
       brightness: Brightness.light,
-      scaffoldBackgroundColor: const Color(0xFFF8F9FA),
       cardColor: Colors.white,
       textTheme: const TextTheme(
         headlineMedium: TextStyle(color: Color(0xFF1A1A2F), fontWeight: FontWeight.w800, fontFamily: 'Poppins'),
         bodyMedium: TextStyle(color: Color(0xFF6C757D), fontFamily: 'Inter'),
         titleLarge: TextStyle(color: Color(0xFF1A1A2F), fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
       ),
-      shadowColor: Colors.grey.withOpacity(0.15),
+      shadowColor: Colors.grey.withOpacity(0.2),
     );
   }
 
   ThemeData _darkTheme() {
     return ThemeData(
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: const Color(0xFF1A1A2F),
       cardColor: const Color(0xFF252541),
       textTheme: const TextTheme(
         headlineMedium: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontFamily: 'Poppins'),
         bodyMedium: TextStyle(color: Color(0xFFB0B0C0), fontFamily: 'Inter'),
         titleLarge: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
       ),
-      shadowColor: Colors.black.withOpacity(0.3),
+      shadowColor: Colors.black.withOpacity(0.4),
     );
   }
 }
@@ -594,16 +547,20 @@ class DashboardHeader extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Dashboard Overview", style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 28)),
-            Text("Real-time insights", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16)),
+            Text(
+              "Dashboard Overview",
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 32),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "Real-time business insights",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
+            ),
           ],
         ),
-        IconButton(
-          icon: Icon(Icons.refresh, color: Theme.of(context).textTheme.bodyMedium?.color),
-          onPressed: onRefresh,
-        ),
+
       ],
-    ).animate().slideY(begin: -0.2, end: 0, duration: const Duration(milliseconds: 500));
+    ).animate().fadeIn(duration: const Duration(milliseconds: 600));
   }
 }
 
@@ -613,12 +570,7 @@ class MainMetricsRow extends StatelessWidget {
   final bool isDarkMode;
   final VoidCallback toggleDarkMode;
 
-  const MainMetricsRow({
-    required this.viewModel,
-    required this.isDarkMode,
-    required this.toggleDarkMode,
-    super.key,
-  });
+  const MainMetricsRow({required this.viewModel, required this.isDarkMode, required this.toggleDarkMode, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -633,44 +585,35 @@ class MainMetricsRow extends StatelessWidget {
                 value: viewModel.totalInventory,
                 icon: Icons.inventory_rounded,
                 gradient: const [Color(0xFF6B48FF), Color(0xFF8A72FF)],
-                width: constraints.maxWidth / 4,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 24),
               MetricCard(
-                title: "Stock Value (Discounted)",
+                title: "Stock Value",
                 value: viewModel.totalStockValue.toInt(),
                 icon: Icons.attach_money_rounded,
                 gradient: const [Color(0xFF00C4B4), Color(0xFF26A69A)],
                 isCurrency: true,
-                width: constraints.maxWidth / 4,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => StockValuationReportPage(
-                        isDarkMode: isDarkMode,
-                        toggleDarkMode: toggleDarkMode,
-                      ),
-                    ),
-                  );
-                },
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => StockValuationReportPage(isDarkMode: isDarkMode, toggleDarkMode: toggleDarkMode),
+                  ),
+                ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 24),
               MetricCard(
                 title: "Sales Today",
                 value: viewModel.transactionsToday['Sale'] ?? 0,
                 icon: Icons.shopping_cart,
                 gradient: const [Color(0xFFFF6B6B), Color(0xFFFF8A80)],
-                width: constraints.maxWidth / 4,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 24),
               MetricCard(
-                title: "Today's Sale Values",
+                title: "Today's Profit",
                 value: viewModel.profitToday,
                 icon: Icons.trending_up,
                 gradient: const [Color(0xFFFFCA28), Color(0xFFFFB300)],
                 isCurrency: true,
-                width: constraints.maxWidth / 4,
               ),
             ],
           ),
@@ -688,7 +631,6 @@ class MetricCard extends StatelessWidget {
   final List<Color> gradient;
   final bool isCurrency;
   final VoidCallback? onTap;
-  final double? width;
 
   const MetricCard({
     required this.title,
@@ -697,7 +639,6 @@ class MetricCard extends StatelessWidget {
     required this.gradient,
     this.isCurrency = false,
     this.onTap,
-    this.width,
     super.key,
   });
 
@@ -706,50 +647,48 @@ class MetricCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: width ?? 200,
+        width: 250,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: Theme.of(context).cardColor,
+          gradient: LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: Theme.of(context).shadowColor,
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 CircleAvatar(
-                  radius: 20,
-                  backgroundColor: gradient[0].withOpacity(0.2),
-                  child: Icon(icon, size: 24, color: gradient[0]),
+                  radius: 24,
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  child: Icon(icon, size: 28, color: Colors.white),
                 ),
-                if (onTap != null) ...[
-                  const Spacer(),
-                  const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
-                ],
+                if (onTap != null) const Spacer(),
+                if (onTap != null) const Icon(Icons.arrow_forward_ios, color: Colors.white70, size: 18),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Text(
               title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14, fontWeight: FontWeight.w500),
+              style: const TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
             AnimatedCount(
               count: value,
               isCurrency: isCurrency,
-              style: Theme.of(context).textTheme.headlineMedium!.copyWith(fontSize: 24),
+              style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
             ),
           ],
         ),
       ),
-    ).animate().scale(duration: const Duration(milliseconds: 500), curve: Curves.easeOutExpo);
+    ).animate().scale(duration: const Duration(milliseconds: 600), curve: Curves.easeOutExpo);
   }
 }
 
@@ -767,7 +706,7 @@ class AnimatedCount extends StatelessWidget {
       tween: IntTween(begin: 0, end: count),
       duration: const Duration(seconds: 2),
       builder: (context, value, child) => Text(
-        isCurrency ? "\$${NumberFormat.decimalPattern().format(value)}" : value.toString(),
+        isCurrency ? "${NumberFormat.decimalPattern().format(value)}" : value.toString(),
         style: style,
       ),
     );
@@ -782,148 +721,93 @@ class TransactionSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text("Payments", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-            DropdownButton<String>(
-              value: "15 Days",
-              items: ["7 Days", "15 Days", "30 Days"]
-                  .map((period) => DropdownMenuItem(
-                value: period,
-                child: Text(period, style: Theme.of(context).textTheme.bodyMedium),
-              ))
-                  .toList(),
-              onChanged: (value) {
-                // Implement filtering logic if needed
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          height: 300,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("Transactions", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+              DropdownButton<String>(
+                value: "15 Days",
+                items: ["7 Days", "15 Days", "30 Days"]
+                    .map((period) => DropdownMenuItem(value: period, child: Text(period)))
+                    .toList(),
+                onChanged: (_) {},
+                style: Theme.of(context).textTheme.bodyMedium,
+                underline: Container(),
+              ),
+            ],
           ),
-          child: LineChart(
-            LineChartData(
-              lineBarsData: [
-                LineChartBarData(
-                  spots: [
-                    FlSpot(1, 1000),
-                    FlSpot(2, 2000),
-                    FlSpot(3, 1500),
-                    FlSpot(4, 3000),
-                    FlSpot(5, 2500),
-                    FlSpot(6, 4000),
-                    FlSpot(7, 3500),
-                    FlSpot(8, 2000),
-                    FlSpot(9, 3000),
-                    FlSpot(10, 2500),
-                    FlSpot(11, 4000),
-                    FlSpot(12, 3500),
-                    FlSpot(13, 5000),
-                    FlSpot(14, 4500),
-                    FlSpot(15, 6000),
-                  ],
-                  isCurved: true,
-                  color: Colors.red,
-                  dotData: FlDotData(show: false),
-                  belowBarData: BarAreaData(show: false),
-                ),
-                LineChartBarData(
-                  spots: [
-                    FlSpot(1, 2000),
-                    FlSpot(2, 1500),
-                    FlSpot(3, 2500),
-                    FlSpot(4, 2000),
-                    FlSpot(5, 3000),
-                    FlSpot(6, 2500),
-                    FlSpot(7, 4000),
-                    FlSpot(8, 3500),
-                    FlSpot(9, 2000),
-                    FlSpot(10, 3000),
-                    FlSpot(11, 2500),
-                    FlSpot(12, 4000),
-                    FlSpot(13, 3500),
-                    FlSpot(14, 5000),
-                    FlSpot(15, 7000),
-                  ],
-                  isCurved: true,
-                  color: Colors.blue,
-                  dotData: FlDotData(show: false),
-                  belowBarData: BarAreaData(show: false),
-                ),
-              ],
-              titlesData: FlTitlesData(
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, meta) {
-                      return Text(
-                        value.toInt().toString(),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
-                      );
-                    },
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 300,
+            child: LineChart(
+              LineChartData(
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: viewModel.transactionsToday.entries
+                        .map((e) => FlSpot(e.key.hashCode.toDouble(), e.value.toDouble()))
+                        .toList(),
+                    isCurved: true,
+                    gradient: const LinearGradient(colors: [Colors.redAccent, Colors.pinkAccent]),
+                    dotData: FlDotData(show: false),
                   ),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 40,
-                    getTitlesWidget: (value, meta) => Text(
-                      '${(value / 1000).toInt()}k',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                  LineChartBarData(
+                    spots: viewModel.transactionsWeek.entries
+                        .map((e) => FlSpot(e.key.hashCode.toDouble(), e.value.toDouble()))
+                        .toList(),
+                    isCurved: true,
+                    gradient: const LinearGradient(colors: [Colors.blueAccent, Colors.cyanAccent]),
+                    dotData: FlDotData(show: false),
+                  ),
+                ],
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      getTitlesWidget: (value, meta) => Text(
+                        '${value.toInt()}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ),
                   ),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              ),
-              borderData: FlBorderData(show: false),
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                getDrawingHorizontalLine: (value) => FlLine(
-                  color: Theme.of(context).shadowColor.withOpacity(0.2),
-                  strokeWidth: 1,
-                ),
+                borderData: FlBorderData(show: false),
+                gridData: FlGridData(show: false),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            _buildLegendItem(context, "Payment Sent", Colors.red),
-            const SizedBox(width: 16),
-            _buildLegendItem(context, "Payment Received", Colors.blue),
-          ],
-        ),
-      ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              _buildLegendItem(context, "Sales", Colors.redAccent),
+              const SizedBox(width: 20),
+              _buildLegendItem(context, "Returns", Colors.blueAccent),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildLegendItem(BuildContext context, String title, Color color) {
     return Row(
       children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
-        ),
+        Text(title, style: Theme.of(context).textTheme.bodyMedium),
       ],
     );
   }
@@ -937,98 +821,57 @@ class BusyHoursGraph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Busy Hours (Today)", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-        const SizedBox(height: 16),
-        Container(
-          height: 300,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: BarChart(
-            BarChartData(
-              alignment: BarChartAlignment.spaceAround,
-              maxY: (viewModel.busyHoursData.isNotEmpty
-                  ? viewModel.busyHoursData.map((e) => e.count).reduce((a, b) => a > b ? a : b) * 1.2
-                  : 10)
-                  .toDouble(),
-              barGroups: viewModel.busyHoursData.map((data) {
-                return BarChartGroupData(
-                  x: data.hour,
-                  barRods: [
-                    BarChartRodData(
-                      toY: data.count.toDouble(),
-                      color: Colors.purpleAccent,
-                      width: 10,
-                      borderRadius: BorderRadius.circular(4),
-                      backDrawRodData: BackgroundBarChartRodData(
-                        show: true,
-                        toY: (viewModel.busyHoursData.isNotEmpty
-                            ? viewModel.busyHoursData.map((e) => e.count).reduce((a, b) => a > b ? a : b) * 1.2
-                            : 10)
-                            .toDouble(),
-                        color: Colors.grey.withOpacity(0.1),
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Busy Hours", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 300,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: viewModel.busyHoursData.isNotEmpty
+                    ? viewModel.busyHoursData.map((e) => e.count).reduce((a, b) => a > b ? a : b).toDouble() * 1.2
+                    : 10,
+                barGroups: viewModel.busyHoursData.map((data) {
+                  return BarChartGroupData(
+                    x: data.hour,
+                    barRods: [
+                      BarChartRodData(
+                        toY: data.count.toDouble(),
+                        gradient: const LinearGradient(colors: [Colors.purpleAccent, Colors.blueAccent]),
+                        width: 12,
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                    ),
-                  ],
-                  showingTooltipIndicators: data.count > 0 ? [0] : [],
-                );
-              }).toList(),
-              titlesData: FlTitlesData(
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, meta) => Text(
-                      "${value.toInt()}:00",
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                    ],
+                  );
+                }).toList(),
+                titlesData: FlTitlesData(
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      getTitlesWidget: (value, meta) => Text("${value.toInt()}:00", style: Theme.of(context).textTheme.bodyMedium),
                     ),
                   ),
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 40,
-                    getTitlesWidget: (value, meta) => Text(
-                      value.toInt().toString(),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
-                    ),
-                  ),
-                ),
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              ),
-              borderData: FlBorderData(show: false),
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                getDrawingHorizontalLine: (value) => FlLine(
-                  color: Theme.of(context).shadowColor.withOpacity(0.2),
-                  strokeWidth: 1,
-                ),
-              ),
-              barTouchData: BarTouchData(
-                enabled: true,
-                touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (_) => Colors.black.withOpacity(0.8),
-                  tooltipPadding: const EdgeInsets.all(8),
-                  tooltipMargin: 8,
-                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                    return BarTooltipItem(
-                      '${group.x}:00\n${rod.toY.toInt()} transactions',
-                      const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                    );
-                  },
-                ),
+                borderData: FlBorderData(show: false),
+                gridData: FlGridData(show: false),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1041,110 +884,57 @@ class ProfitMetrics extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Profit Distribution", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-        const SizedBox(height: 16),
-        Container(
-          height: 300,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: PieChart(
-                  PieChartData(
-                    sections: _getPieChartSections(context),
-                    centerSpaceRadius: 40,
-                    sectionsSpace: 2,
-                    startDegreeOffset: 270,
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Profit Overview", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 300,
+            child: PieChart(
+              PieChartData(
+                sections: [
+                  PieChartSectionData(
+                    color: Colors.greenAccent,
+                    value: viewModel.profitToday.toDouble(),
+                    title: "Today",
+                    radius: 80,
+                    titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
-                ),
+                  PieChartSectionData(
+                    color: Colors.blueAccent,
+                    value: viewModel.profitMonth.toDouble(),
+                    title: "Month",
+                    radius: 80,
+                    titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  PieChartSectionData(
+                    color: Colors.purpleAccent,
+                    value: viewModel.profitYear.toDouble(),
+                    title: "Year",
+                    radius: 80,
+                    titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ],
+                centerSpaceRadius: 50,
+                sectionsSpace: 4,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLegendItem(context, "Today", Colors.green, viewModel.profitToday),
-                    const SizedBox(height: 8),
-                    _buildLegendItem(context, "This Month", Colors.blue, viewModel.profitMonth),
-                    const SizedBox(height: 8),
-                    _buildLegendItem(context, "This Year", Colors.purple, viewModel.profitYear),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
-    );
-  }
-
-  List<PieChartSectionData> _getPieChartSections(BuildContext context) {
-    final total = viewModel.profitToday + viewModel.profitMonth + viewModel.profitYear;
-    if (total == 0) {
-      return [
-        PieChartSectionData(
-          color: Colors.grey.withOpacity(0.3),
-          value: 1,
-          title: "No Data",
-          radius: 50,
-          titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-      ];
-    }
-
-    return [
-      PieChartSectionData(
-        color: Colors.green,
-        value: viewModel.profitToday.toDouble(),
-        title: "${((viewModel.profitToday / total) * 100).toStringAsFixed(0)}%",
-        radius: 50,
-        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+        ],
       ),
-      PieChartSectionData(
-        color: Colors.blue,
-        value: viewModel.profitMonth.toDouble(),
-        title: "${((viewModel.profitMonth / total) * 100).toStringAsFixed(0)}%",
-        radius: 50,
-        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-      ),
-      PieChartSectionData(
-        color: Colors.purple,
-        value: viewModel.profitYear.toDouble(),
-        title: "${((viewModel.profitYear / total) * 100).toStringAsFixed(0)}%",
-        radius: 50,
-        titleStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-      ),
-    ];
-  }
-
-  Widget _buildLegendItem(BuildContext context, String title, Color color, int value) {
-    return Row(
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 14),
-        ),
-      ],
     );
   }
 }
 
-// Recent Invoices (Updated)
+// Recent Invoices
 class RecentInvoices extends StatefulWidget {
   final DashboardViewModel viewModel;
 
@@ -1163,40 +953,35 @@ class _RecentInvoicesState extends State<RecentInvoices> {
         ? widget.viewModel.recentSalesInvoices
         : widget.viewModel.recentPurchaseInvoices;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text("Recent Invoice", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-            DropdownButton<String>(
-              value: _selectedInvoiceType,
-              items: ["Sales Invoice", "Purchase Invoice"]
-                  .map((type) => DropdownMenuItem(
-                value: type,
-                child: Text(type, style: Theme.of(context).textTheme.bodyMedium),
-              ))
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() {
-                    _selectedInvoiceType = value;
-                  });
-                }
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("Recent Invoices", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+              DropdownButton<String>(
+                value: _selectedInvoiceType,
+                items: ["Sales Invoice", "Purchase Invoice"]
+                    .map((type) => DropdownMenuItem(value: type, child: Text(type)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _selectedInvoiceType = value);
+                },
+                style: Theme.of(context).textTheme.bodyMedium,
+                underline: Container(),
+              ),
+            ],
           ),
-          child: Column(
+          const SizedBox(height: 20),
+          Column(
             children: [
               _buildInvoiceHeader(context),
               const Divider(),
@@ -1209,8 +994,8 @@ class _RecentInvoicesState extends State<RecentInvoices> {
                 ...invoices.map((invoice) => _buildInvoiceRow(context, invoice)),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1219,29 +1004,17 @@ class _RecentInvoicesState extends State<RecentInvoices> {
       children: [
         Expanded(child: Text("Invoice ID", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
         Expanded(child: Text("Customer", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
-        Expanded(child: Text("Sales Date", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
-        Expanded(child: Text("Paid Amount", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
+        Expanded(child: Text("Date", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
+        Expanded(child: Text("Amount", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
         Expanded(child: Text("Status", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold))),
       ],
     );
   }
 
   Widget _buildInvoiceRow(BuildContext context, Invoice invoice) {
-    DateTime date;
-    try {
-      if (invoice.timestamp is Timestamp) {
-        date = (invoice.timestamp as Timestamp).toDate();
-      } else if (invoice.timestamp is String) {
-        date = DateFormat('dd-MM-yyyy').parse(invoice.timestamp);
-      } else {
-        date = DateTime.now();
-      }
-    } catch (e) {
-      print('Error parsing invoice date: $e');
-      date = DateTime.now();
-    }
+    DateTime date = invoice.timestamp is Timestamp ? (invoice.timestamp as Timestamp).toDate() : DateTime.now();
+    final status = invoice.type == 'Purchase' ? "Received" : (invoice.balanceDue > 0 ? "Pending" : "Completed");
 
-    final status = invoice.type == 'Purchase' ? "Received" : (invoice.balanceDue > 0 ? "In Progress" : "Delivered");
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -1249,22 +1022,21 @@ class _RecentInvoicesState extends State<RecentInvoices> {
           Expanded(child: Text("#INV${invoice.invoiceNumber}", style: Theme.of(context).textTheme.bodyMedium)),
           Expanded(child: Text(invoice.customer['name'] ?? 'Unknown', style: Theme.of(context).textTheme.bodyMedium)),
           Expanded(child: Text(DateFormat('dd/MM/yyyy').format(date), style: Theme.of(context).textTheme.bodyMedium)),
-          Expanded(child: Text("\$${invoice.total.toStringAsFixed(0)}", style: Theme.of(context).textTheme.bodyMedium)),
+          Expanded(child: Text("${invoice.total.toStringAsFixed(0)}", style: Theme.of(context).textTheme.bodyMedium)),
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: status == "Delivered" || status == "Received"
-                    ? Colors.green.withOpacity(0.1)
-                    : Colors.orange.withOpacity(0.1),
+                gradient: LinearGradient(
+                  colors: status == "Completed" || status == "Received"
+                      ? [Colors.greenAccent, Colors.tealAccent]
+                      : [Colors.orangeAccent, Colors.deepOrangeAccent],
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 status,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: status == "Delivered" || status == "Received" ? Colors.green : Colors.orange,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -1283,54 +1055,51 @@ class StockHistory extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text("Stock History", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-            DropdownButton<String>(
-              value: viewModel.stockHistoryPeriod,
-              items: ["7 Days", "15 Days", "30 Days"]
-                  .map((period) => DropdownMenuItem(
-                value: period,
-                child: Text(period, style: Theme.of(context).textTheme.bodyMedium),
-              ))
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  viewModel.setStockHistoryPeriod(value);
-                }
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: Column(
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStockHistoryItem(context, "Total Sales Items", viewModel.stockHistory['totalSalesItems']!, Colors.blue, "+20%"),
-              const Divider(),
-              _buildStockHistoryItem(context, "Sales Return Items", viewModel.stockHistory['salesReturnItems']!, Colors.red, "-45%"),
-              const Divider(),
-              _buildStockHistoryItem(context, "Total Purchase Items", viewModel.stockHistory['totalPurchaseItems']!, Colors.blue, "+20%"),
-              const Divider(),
-              _buildStockHistoryItem(context, "Purchase Returns Items", viewModel.stockHistory['purchaseReturnItems']!, Colors.red, "-68%"),
+              Text("Stock History", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+              DropdownButton<String>(
+                value: viewModel.stockHistoryPeriod,
+                items: ["7 Days", "15 Days", "30 Days"]
+                    .map((period) => DropdownMenuItem(value: period, child: Text(period)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) viewModel.setStockHistoryPeriod(value);
+                },
+                style: Theme.of(context).textTheme.bodyMedium,
+                underline: Container(),
+              ),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 20),
+          Column(
+            children: [
+              _buildStockHistoryItem(context, "Total Sales", viewModel.stockHistory['totalSalesItems']!, Colors.blueAccent),
+              const Divider(),
+              _buildStockHistoryItem(context, "Sales Returns", viewModel.stockHistory['salesReturnItems']!, Colors.redAccent),
+              const Divider(),
+              _buildStockHistoryItem(context, "Total Purchases", viewModel.stockHistory['totalPurchaseItems']!, Colors.greenAccent),
+              const Divider(),
+              _buildStockHistoryItem(context, "Purchase Returns", viewModel.stockHistory['purchaseReturnItems']!, Colors.orangeAccent),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStockHistoryItem(BuildContext context, String title, int value, Color trendColor, String trend) {
+  Widget _buildStockHistoryItem(BuildContext context, String title, int value, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
@@ -1339,12 +1108,7 @@ class StockHistory extends StatelessWidget {
           Text(title, style: Theme.of(context).textTheme.bodyMedium),
           Row(
             children: [
-              Text(value.toString(), style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 24)),
-              const SizedBox(width: 8),
-              Text(
-                trend,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: trendColor),
-              ),
+              Text(value.toString(), style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 24, color: color)),
             ],
           ),
         ],
@@ -1353,7 +1117,7 @@ class StockHistory extends StatelessWidget {
   }
 }
 
-// Stock Alert (Updated)
+// Stock Alert
 class StockAlert extends StatelessWidget {
   final DashboardViewModel viewModel;
 
@@ -1361,56 +1125,39 @@ class StockAlert extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Stock Alert", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            // Calculate the height to match CategoryGrid
-            final crossAxisCount = constraints.maxWidth > 900 ? 3 : constraints.maxWidth > 600 ? 2 : 1;
-            const childAspectRatio = 1.5;
-            // Height of one row in CategoryGrid: (width / crossAxisCount) / childAspectRatio + padding
-            final categoryItemHeight = (constraints.maxWidth / crossAxisCount) / childAspectRatio;
-            // CategoryGrid has 1 row (3 items in a row), plus title (20) and spacing (16)
-            final categoryGridHeight = categoryItemHeight + 16 + 20; // 16 for spacing, 20 for title
-
-            return Container(
-              height: categoryGridHeight, // Match the height of CategoryGrid
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Stock Alert", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+          const SizedBox(height: 20),
+          Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("Product", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Text("QTY", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                ],
               ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text("Product", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                          Text("QTY", style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      const Divider(),
-                      if (viewModel.lowStockItems.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text("No low stock items"),
-                        )
-                      else
-                        ...viewModel.lowStockItems.map((item) => _buildStockAlertItem(context, item)),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-      ],
+              const Divider(),
+              if (viewModel.lowStockItems.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text("No low stock items"),
+                )
+              else
+                ...viewModel.lowStockItems.map((item) => _buildStockAlertItem(context, item)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1421,7 +1168,7 @@ class StockAlert extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(child: Text(item['itemName'], style: Theme.of(context).textTheme.bodyMedium)),
-          Text(item['stockQuantity'].toString(), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.red)),
+          Text(item['stockQuantity'].toString(), style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.redAccent)),
         ],
       ),
     );
@@ -1436,45 +1183,53 @@ class CategoryGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Categories", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20)),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final crossAxisCount = constraints.maxWidth > 900 ? 3 : constraints.maxWidth > 600 ? 2 : 1;
-            return GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: crossAxisCount,
-              childAspectRatio: 1.5,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              children: [
-                CategoryItem(
-                  title: "Qualities",
-                  value: viewModel.totalQualities,
-                  icon: Icons.auto_awesome_mosaic_rounded,
-                  color: const Color(0xFFFF6B6B),
-                ),
-                CategoryItem(
-                  title: "Companies",
-                  value: viewModel.totalCompanies,
-                  icon: Icons.business_rounded,
-                  color: const Color(0xFF00C4B4),
-                ),
-                CategoryItem(
-                  title: "Vehicles",
-                  value: viewModel.totalVehicles,
-                  icon: Icons.local_shipping_rounded,
-                  color: const Color(0xFFFFCA28),
-                ),
-              ],
-            );
-          },
-        ),
-      ],
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Categories", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 22)),
+          const SizedBox(height: 20),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final crossAxisCount = constraints.maxWidth > 900 ? 3 : constraints.maxWidth > 600 ? 2 : 1;
+              return GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: crossAxisCount,
+                childAspectRatio: 1.5,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                children: [
+                  CategoryItem(
+                    title: "Qualities",
+                    value: viewModel.totalQualities,
+                    icon: Icons.auto_awesome_mosaic_rounded,
+                    gradient: const [Color(0xFFFF6B6B), Color(0xFFFF8A80)],
+                  ),
+                  CategoryItem(
+                    title: "Companies",
+                    value: viewModel.totalCompanies,
+                    icon: Icons.business_rounded,
+                    gradient: const [Color(0xFF00C4B4), Color(0xFF26A69A)],
+                  ),
+                  CategoryItem(
+                    title: "Vehicles",
+                    value: viewModel.totalVehicles,
+                    icon: Icons.local_shipping_rounded,
+                    gradient: const [Color(0xFFFFCA28), Color(0xFFFFB300)],
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1483,21 +1238,15 @@ class CategoryItem extends StatelessWidget {
   final String title;
   final int value;
   final IconData icon;
-  final Color color;
+  final List<Color> gradient;
 
-  const CategoryItem({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-    super.key,
-  });
+  const CategoryItem({required this.title, required this.value, required this.icon, required this.gradient, super.key});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        gradient: LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Theme.of(context).shadowColor, blurRadius: 8, offset: const Offset(0, 2))],
       ),
@@ -1507,18 +1256,18 @@ class CategoryItem extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 20,
-            backgroundColor: color.withOpacity(0.1),
-            child: Icon(icon, size: 24, color: color),
+            backgroundColor: Colors.white.withOpacity(0.2),
+            child: Icon(icon, size: 24, color: Colors.white),
           ),
           const Spacer(),
           Text(
             title,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+            style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 16),
           ),
           const SizedBox(height: 8),
           AnimatedCount(
             count: value,
-            style: Theme.of(context).textTheme.headlineMedium!.copyWith(fontSize: 28),
+            style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -1527,12 +1276,5 @@ class CategoryItem extends StatelessWidget {
 }
 
 void main() {
-  runApp(
-    MaterialApp(
-      home: Dashboard(
-        isDarkMode: false,
-        toggleDarkMode: () {},
-      ),
-    ),
-  );
+  runApp(MaterialApp(home: Dashboard(isDarkMode: false, toggleDarkMode: () {})));
 }

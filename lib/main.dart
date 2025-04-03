@@ -73,6 +73,8 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FocusNode _emailFocus = FocusNode();
+  final FocusNode _passwordFocus = FocusNode();
   bool _obscureText = true;
   bool _isLoading = false;
   bool _rememberMe = false;
@@ -80,12 +82,30 @@ class _LoginPageState extends State<LoginPage> {
   // Color Scheme
   Color get _primaryColor => const Color(0xFF0D6EFD);
 
+  @override
+  void initState() {
+    super.initState();
+    // Request focus on email field when widget initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FocusScope.of(context).requestFocus(_emailFocus);
+    });
+  }
+
+  @override
+  void dispose() {
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> _signIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
 
     try {
-     await  _auth.signInWithEmailAndPassword(
+      await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
@@ -282,6 +302,7 @@ class _LoginPageState extends State<LoginPage> {
   Widget _buildEmailField(Color textColor, Color secondaryTextColor, Color surfaceColor) {
     return TextField(
       controller: _emailController,
+      focusNode: _emailFocus,
       decoration: InputDecoration(
         hintText: "Email Address",
         filled: true,
@@ -293,12 +314,17 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
       style: TextStyle(color: textColor),
+      textInputAction: TextInputAction.next,
+      onSubmitted: (_) {
+        FocusScope.of(context).requestFocus(_passwordFocus);
+      },
     );
   }
 
   Widget _buildPasswordField(Color textColor, Color secondaryTextColor, Color surfaceColor) {
     return TextField(
       controller: _passwordController,
+      focusNode: _passwordFocus,
       obscureText: _obscureText,
       decoration: InputDecoration(
         hintText: "Password",
@@ -318,6 +344,8 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
       style: TextStyle(color: textColor),
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => _signIn(),
     );
   }
 

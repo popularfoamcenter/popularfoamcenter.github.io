@@ -6,6 +6,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/foundation.dart'; // For compute
+import 'dart:convert'; // For base64 encoding
+import 'package:universal_html/html.dart' as html; // For web-specific functionality
 import 'pointofsale.dart'; // Assuming this is where PointOfSalePage, Invoice, and CartItem are defined
 
 // Color Scheme Matching Purchase Invoice
@@ -42,7 +44,6 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
   final double _mobileTableWidth = 1650;
 
   late TabController _tabController;
-  late Uint8List logoImage;
   late pw.Font baseFont;
   late pw.Font boldFont;
 
@@ -50,14 +51,13 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
   void initState() {
     super.initState();
     _loadAssets();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
       setState(() {});
     });
   }
 
   Future<void> _loadAssets() async {
-    logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
     baseFont = await PdfGoogleFonts.openSansRegular();
     boldFont = await PdfGoogleFonts.openSansBold();
   }
@@ -153,14 +153,12 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
 
-      // Load the logo image before building the PDF
       final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
 
       DateTime invoiceDate = invoice.timestamp is Timestamp
           ? (invoice.timestamp as Timestamp).toDate()
           : DateTime.now();
 
-      // Fetch packaging units from Firestore
       final Map<String, String> packagingUnits = {};
       if (invoice.items.isNotEmpty) {
         for (final item in invoice.items) {
@@ -168,7 +166,6 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
           final quality = item.quality?.trim() ?? 'Unknown';
           final key = '$itemName-$quality';
 
-          // Query Firestore for the specific itemName and qualityName pair
           final querySnapshot = await FirebaseFirestore.instance
               .collection('items')
               .where('itemName', isEqualTo: itemName)
@@ -181,7 +178,6 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
             String unit = data['packagingUnit']?.toString() ?? 'Unit';
             packagingUnits[key] = unit == 'Pieces' ? 'pcs' : unit;
           } else {
-            // Fallback only if no matching document is found
             packagingUnits[key] = 'Unit';
           }
         }
@@ -616,277 +612,394 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       );
     }
   }
-
   Future<void> _print800(DocumentSnapshot transactionDoc) async {
     final invoice = Invoice.fromMap(transactionDoc.id, transactionDoc.data() as Map<String, dynamic>);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: _primaryColor)),
+    );
+
     try {
       final pdf = pw.Document();
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
-      DateTime invoiceDate = invoice.timestamp is Timestamp
-          ? (invoice.timestamp as Timestamp).toDate()
-          : DateTime.now();
-
-      // Sort items asynchronously
+      final invoiceDate = (invoice.timestamp as Timestamp).toDate();
       final sortedItems = await compute(sortItems, invoice.items);
 
-      // Debug print to verify sorting
-      print('Original Items:');
-      for (var item in invoice.items) {
-        print('${item.quality} - ${item.itemName}');
-      }
-      print('Sorted Items:');
-      for (var item in sortedItems) {
-        print('${item.quality} - ${item.itemName}');
-      }
-
-      const double baseHeight = 50;
-      const double headerHeight = 10;
-      const double itemHeight = 10;
-      const double totalHeight = 12;
-      const double footerHeight = 12;
-      final double dynamicHeight = baseHeight + headerHeight + (sortedItems.length * itemHeight) + totalHeight + footerHeight;
+      // Load the logo image from assets
+      final Uint8List logoImage = (await rootBundle.load('assets/images/pfclogo.png')).buffer.asUint8List();
 
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat(
             80 * PdfPageFormat.mm,
-            dynamicHeight * PdfPageFormat.mm,
+            double.infinity,
             marginAll: 2 * PdfPageFormat.mm,
           ),
           theme: pw.ThemeData.withFont(
-            base: await PdfGoogleFonts.robotoRegular(),
-            bold: await PdfGoogleFonts.robotoBold(),
+            base: await PdfGoogleFonts.openSansRegular(),
+            bold: await PdfGoogleFonts.openSansBold(),
           ),
           build: (context) => pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.center,
             children: [
-              pw.Image(pw.MemoryImage(logoImage), width: 35, height: 35),
-              pw.SizedBox(height: 2),
+              // Logo
+              pw.Image(
+                pw.MemoryImage(logoImage),
+                width: 100, // Adjust width to fit 80mm thermal print
+                height: 100, // Adjust height as needed
+              ),
+              pw.SizedBox(height: 0), // Reduced from 10 to 2
               pw.Text(
                 'Popular Foam Center',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                ),
               ),
               pw.Text(
                 'Zanana Hospital Road, Bahawalpur',
-                style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
-                textAlign: pw.TextAlign.center,
+                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
               ),
-              pw.SizedBox(height: 2),
-              pw.Divider(thickness: 0.5, color: PdfColors.black),
+              pw.SizedBox(height: 10),
+
+              // Transaction Type
+              pw.Text(
+                invoice.type.toLowerCase() == 'sale' ? 'SALE INVOICE' : invoice.type.toUpperCase(),
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                ),
+              ),
+              pw.SizedBox(height: 5),
+
+              // Transaction Info and Customer Section aligned
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text(
-                    'INV #${invoice.invoiceNumber}',
-                    style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'INV #${invoice.invoiceNumber}',
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'Billed To: ${invoice.customer['name'] ?? 'Walking Customer'}',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                      ),
+                      if ((invoice.customer['phone'] ?? '').isNotEmpty)
+                        pw.Text(
+                          'Phone: ${invoice.customer['phone']}',
+                          style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                        ),
+                    ],
                   ),
                   pw.Text(
-                    DateFormat('dd-MM-yy HH:mm').format(invoiceDate),
-                    style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
+                    DateFormat('dd-MMM-yy').format(invoiceDate),
+                    style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
                   ),
                 ],
               ),
-              pw.Text(
-                'Type: ${invoice.type.toUpperCase()}  Cashier: M.Hashim',
-                style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
-              ),
-              pw.SizedBox(height: 2),
-              pw.Align(
-                alignment: pw.Alignment.centerLeft,
-                child: pw.Text(
-                  'To: ${invoice.customer['name'] ?? 'Walking Customer'}',
-                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                  maxLines: 1,
-                  overflow: pw.TextOverflow.clip,
-                ),
-              ),
-              pw.SizedBox(height: 3),
-              pw.Divider(thickness: 0.5, color: PdfColors.black),
-              pw.Table(
-                columnWidths: {
-                  0: const pw.FlexColumnWidth(1),
-                  1: const pw.FlexColumnWidth(3),
-                  2: const pw.FlexColumnWidth(1),
-                  3: const pw.FlexColumnWidth(1),
-                },
-                border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+              pw.SizedBox(height: 10),
+
+              // Items Table
+              pw.Column(
                 children: [
-                  pw.TableRow(
-                    decoration: pw.BoxDecoration(color: PdfColors.grey200),
+                  pw.Row(
                     children: [
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(2),
+                      pw.Container(
+                        width: 25,
+                        padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                        color: PdfColors.black,
                         child: pw.Text(
-                          'Sr',
-                          style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                          'Sr#',
+                          style: const pw.TextStyle(
+                            fontSize: 10,
+                            color: PdfColors.white,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
                           textAlign: pw.TextAlign.center,
                         ),
                       ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(2),
-                        child: pw.Text(
-                          'Item',
-                          style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                          textAlign: pw.TextAlign.left,
+                      pw.Expanded(
+                        flex: 3,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                          color: PdfColors.black,
+                          child: pw.Text(
+                            'Description',
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.white,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                            textAlign: pw.TextAlign.left,
+                          ),
                         ),
                       ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(2),
-                        child: pw.Text(
-                          'Qty',
-                          style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                          textAlign: pw.TextAlign.center,
+                      pw.Expanded(
+                        flex: 1,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                          color: PdfColors.black,
+                          child: pw.Text(
+                            'Qty',
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.white,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                            textAlign: pw.TextAlign.center,
+                          ),
                         ),
                       ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(2),
-                        child: pw.Text(
-                          'Total',
-                          style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                          textAlign: pw.TextAlign.right,
+                      pw.Expanded(
+                        flex: 2,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                          color: PdfColors.black,
+                          child: pw.Text(
+                            'Price',
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.white,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                            textAlign: pw.TextAlign.right,
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        flex: 2,
+                        child: pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                          color: PdfColors.black,
+                          child: pw.Text(
+                            'Total',
+                            style: const pw.TextStyle(
+                              fontSize: 10,
+                              color: PdfColors.white,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                            textAlign: pw.TextAlign.right,
+                          ),
                         ),
                       ),
                     ],
                   ),
                   ...sortedItems.asMap().entries.map((entry) {
-                    final int index = entry.key + 1;
+                    final index = entry.key + 1;
                     final item = entry.value;
-                    return pw.TableRow(
+                    return pw.Column(
                       children: [
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(2),
-                          child: pw.Text(
-                            index.toString(),
-                            style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
-                            textAlign: pw.TextAlign.center,
-                          ),
+                        pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Container(
+                              width: 25,
+                              padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                              child: pw.Text(
+                                '$index',
+                                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                                textAlign: pw.TextAlign.center,
+                              ),
+                            ),
+                            pw.Expanded(
+                              flex: 3,
+                              child: pw.Column(
+                                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                children: [
+                                  pw.Text(
+                                    item.itemName ?? '',
+                                    style: const pw.TextStyle(fontSize: 11, color: PdfColors.black),
+                                  ),
+                                  if (item.quality != null && item.quality!.isNotEmpty)
+                                    pw.Text(
+                                      item.quality!,
+                                      style: const pw.TextStyle(fontSize: 9, color: PdfColors.black),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            pw.Expanded(
+                              flex: 1,
+                              child: pw.Text(
+                                item.qty.toStringAsFixed(0),
+                                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                                textAlign: pw.TextAlign.center,
+                              ),
+                            ),
+                            pw.Expanded(
+                              flex: 2,
+                              child: pw.Text(
+                                numberFormat.format(double.parse(item.price ?? '0')),
+                                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                                textAlign: pw.TextAlign.right,
+                              ),
+                            ),
+                            pw.Expanded(
+                              flex: 2,
+                              child: pw.Text(
+                                numberFormat.format(double.parse(item.total)),
+                                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                                textAlign: pw.TextAlign.right,
+                              ),
+                            ),
+                          ],
                         ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(2),
-                          child: pw.Text(
-                            '${item.quality} ${item.itemName}',
-                            style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
-                            maxLines: 1,
-                            overflow: pw.TextOverflow.clip,
-                          ),
-                        ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(2),
-                          child: pw.Text(
-                            item.qty.toStringAsFixed(0),
-                            style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
-                            textAlign: pw.TextAlign.center,
-                          ),
-                        ),
-                        pw.Padding(
-                          padding: const pw.EdgeInsets.all(2),
-                          child: pw.Text(
-                            numberFormat.format(double.parse(item.total)),
-                            style: pw.TextStyle(fontSize: 7, color: PdfColors.black),
-                            textAlign: pw.TextAlign.right,
-                          ),
-                        ),
+                        pw.Divider(height: 8, thickness: 0.5, color: PdfColors.black),
                       ],
                     );
                   }),
                 ],
               ),
-              pw.SizedBox(height: 3),
-              pw.Divider(thickness: 0.5, color: PdfColors.black),
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(vertical: 3),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('Subtotal:', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                        pw.Text(numberFormat.format(invoice.subtotal), style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                      ],
-                    ),
-                    if (invoice.globalDiscount > 0)
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Discount:', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                          pw.Text('-${numberFormat.format(invoice.globalDiscount)}', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                        ],
-                      ),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('Total:', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
-                        pw.Text(
-                          numberFormat.format(invoice.total),
-                          style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                        ),
-                      ],
-                    ),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text('Received:', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                        pw.Text(numberFormat.format(invoice.givenAmount), style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                      ],
-                    ),
-                    if (invoice.returnAmount > 0)
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Change:', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                          pw.Text(numberFormat.format(invoice.returnAmount), style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                        ],
-                      ),
-                    if (invoice.balanceDue > 0)
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Due:', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                          pw.Text(numberFormat.format(invoice.balanceDue), style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
-                        ],
-                      ),
-                  ],
-                ),
+              pw.SizedBox(height: 10),
+
+              // Totals Section with Stars
+              pw.Text(
+                '******************************',
+                style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
               ),
               pw.SizedBox(height: 5),
-              pw.Divider(thickness: 0.5, color: PdfColors.black),
-              pw.Text(
-                'Thank You!',
-                style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-                textAlign: pw.TextAlign.center,
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  _totalRow('Subtotal', numberFormat.format(invoice.subtotal)),
+                  if (invoice.globalDiscount > 0)
+                    _totalRow('Discount', '-${numberFormat.format(invoice.globalDiscount)}'),
+                  _totalRow('TOTAL', numberFormat.format(invoice.total), isBold: true, fontSize: 12),
+                  pw.SizedBox(height: 8),
+                  _totalRow('Received', numberFormat.format(invoice.givenAmount)),
+                  if (invoice.returnAmount > 0)
+                    _totalRow('Change', numberFormat.format(invoice.returnAmount)),
+                  if (invoice.balanceDue > 0)
+                    _totalRow('Due', numberFormat.format(invoice.balanceDue)),
+                ],
               ),
-              pw.Text(
-                'Contact: 0302-9596046 | FB: Popular Foam Center',
-                style: pw.TextStyle(fontSize: 6, color: PdfColors.black),
-                textAlign: pw.TextAlign.center,
+              pw.SizedBox(height: 15),
+
+              // Footer
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Text(
+                    'Thank You for Your Business!',
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.black,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Contact: 0302-9596046',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                  pw.Text(
+                    'FB: @PopularFoamCenter',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Text(
+                    'Note: Claims as per company policy',
+                    style: const pw.TextStyle(fontSize: 8, color: PdfColors.black),
+                  ),
+                ],
               ),
-              pw.Text(
-                'Claims as per policy',
-                style: pw.TextStyle(fontSize: 6, color: PdfColors.black),
-                textAlign: pw.TextAlign.center,
-              ),
-              pw.SizedBox(height: 5),
             ],
           ),
         ),
       );
 
       final pdfBytes = await pdf.save();
-      await Printing.layoutPdf(
-        onLayout: (_) => pdfBytes,
-        name: 'PFC-INV-${invoice.invoiceNumber}-80mm',
-      );
+      final String fileName = 'PFC-INV-${invoice.invoiceNumber}-80mm';
+
+      if (kIsWeb) {
+        final blob = html.Blob([pdfBytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.document.createElement('a') as html.AnchorElement
+          ..href = url
+          ..download = '$fileName.pdf'
+          ..style.display = 'none';
+
+        html.document.body?.children.add(anchor);
+        anchor.click();
+
+        Future.delayed(const Duration(seconds: 1), () {
+          html.document.body?.children.remove(anchor);
+          html.Url.revokeObjectUrl(url);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Receipt downloaded as $fileName.pdf'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        await Printing.layoutPdf(
+          onLayout: (PdfPageFormat format) async => pdfBytes,
+          name: fileName,
+        );
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Receipt sent to printer!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e, stack) {
+      debugPrint('Printing error: $e');
+      debugPrint('Stack trace: $stack');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('80mm Invoice printed successfully!')),
+        SnackBar(
+          content: Text('Printing failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
-    } catch (e) {
-      print('Error in _print800: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to print 80mm invoice: $e')),
-      );
+    } finally {
+      Navigator.of(context).pop();
     }
+  }
+
+
+
+  pw.Widget _totalRow(String label, String value, {bool isBold = false, double fontSize = 10, PdfColor? color}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: fontSize,
+              fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: color ?? PdfColors.black,
+            ),
+          ),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: fontSize,
+              fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: color ?? PdfColors.black,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _completeOrder(DocumentSnapshot transactionDoc, double additionalAmount) async {
@@ -1085,6 +1198,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
                 _TabButton(label: 'Sales', index: 1, controller: _tabController),
                 _TabButton(label: 'Returns', index: 2, controller: _tabController),
                 _TabButton(label: 'Orders', index: 3, controller: _tabController),
+                _TabButton(label: 'Pending', index: 4, controller: _tabController),
               ],
             ),
           ),
@@ -1117,6 +1231,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         _buildTransactionsByType('Sale'),
         _buildTransactionsByType('Return'),
         _buildTransactionsByType('Order Booking'),
+        _buildPendingTransactions(),
       ],
     );
   }
@@ -1138,6 +1253,7 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
               _buildTransactionsByType('Sale'),
               _buildTransactionsByType('Return'),
               _buildTransactionsByType('Order Booking'),
+              _buildPendingTransactions(),
             ],
           ),
         ),
@@ -1172,6 +1288,17 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
     );
   }
 
+  Widget _buildPendingTransactions() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('invoices')
+          .where('balanceDue', isGreaterThan: 0)
+          .orderBy('timestamp', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) => _buildPendingTransactionList(snapshot),
+    );
+  }
+
   Widget _buildTransactionList(AsyncSnapshot<QuerySnapshot> snapshot) {
     if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: _primaryColor));
     if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
@@ -1193,6 +1320,63 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
         ),
       ],
     );
+  }
+
+  Widget _buildPendingTransactionList(AsyncSnapshot<QuerySnapshot> snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator(color: _primaryColor));
+    }
+    if (snapshot.hasError) {
+      return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
+    }
+
+    return FutureBuilder<List<DocumentSnapshot>>(
+      future: _filterPendingTransactions(snapshot.data?.docs ?? []),
+      builder: (context, futureSnapshot) {
+        if (!futureSnapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: _primaryColor));
+        }
+
+        final transactions = futureSnapshot.data!
+            .where((doc) => (doc['customer']?['name'] as String? ?? '')
+            .toLowerCase()
+            .contains(_searchQuery))
+            .toList();
+
+        if (transactions.isEmpty) {
+          return const Center(
+              child: Text('No pending transactions found', style: TextStyle(color: _textColor)));
+        }
+
+        return Column(
+          children: [
+            _buildDesktopHeader(),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemCount: transactions.length,
+                itemBuilder: (context, index) => _buildDesktopRow(transactions[index]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<List<DocumentSnapshot>> _filterPendingTransactions(List<DocumentSnapshot> transactions) async {
+    final customerSnapshot = await _firestore.collection('customers').get();
+    final savedCustomerNames = customerSnapshot.docs
+        .map((doc) => (doc['name'] as String?)?.toLowerCase())
+        .where((name) => name != null)
+        .toSet();
+
+    return transactions.where((doc) {
+      final customerName = (doc['customer']?['name'] as String?)?.toLowerCase() ?? '';
+      return !savedCustomerNames.contains(customerName);
+    }).toList();
   }
 
   Widget _buildDesktopHeader() => Container(
@@ -1354,29 +1538,6 @@ class _TransactionsPageState extends State<TransactionsPage> with SingleTickerPr
       onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
     ),
   );
-
-  Widget _buildTransactionListMobile(AsyncSnapshot<QuerySnapshot> snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: _primaryColor));
-    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
-
-    final transactions = snapshot.data?.docs.where((doc) => (doc['customer']?['name'] as String? ?? '').toLowerCase().contains(_searchQuery)).toList() ?? [];
-    if (transactions.isEmpty) return const Center(child: Text('No transactions found', style: TextStyle(color: _textColor)));
-
-    return Column(
-      children: [
-        _buildMobileHeader(),
-        Expanded(
-          child: ListView.separated(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemCount: transactions.length,
-            itemBuilder: (context, index) => _buildMobileRow(transactions[index]),
-          ),
-        ),
-      ],
-    );
-  }
 
   String _getTypeLabel(String type) {
     switch (type.toLowerCase()) {
