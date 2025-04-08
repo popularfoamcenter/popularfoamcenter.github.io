@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For RawKeyboard
+import 'package:flutter/services.dart'; // For RawKeyboard and rootBundle
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -36,6 +36,33 @@ class ProcessedTransaction {
   final DateTime date;
 
   ProcessedTransaction(this.docId, this.type, this.details, this.inQty, this.outQty, this.balance, this.date);
+}
+
+class MonthClosing {
+  final String monthYear; // e.g., "October 2023"
+  final double closingBalance;
+  final double monthIn;
+  final double monthOut;
+
+  MonthClosing(this.monthYear, this.closingBalance, this.monthIn, this.monthOut);
+}
+
+class MonthClosingData {
+  final double inQty;
+  final double outQty;
+  final double closingBalance;
+
+  MonthClosingData(this.inQty, this.outQty, this.closingBalance);
+}
+
+class ProcessedData {
+  final List<ProcessedTransaction> transactions;
+  final double totalIn;
+  final double totalOut;
+  final double finalBalance;
+  final List<MonthClosing> monthClosings;
+
+  ProcessedData(this.transactions, this.totalIn, this.totalOut, this.finalBalance, this.monthClosings);
 }
 
 class ProductLedgerPage extends StatefulWidget {
@@ -75,12 +102,16 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     }
   }
 
-  Future<List<ProcessedTransaction>> _fetchLedgerTransactions(String quality) async {
+  Future<ProcessedData> _fetchLedgerTransactions(String quality) async {
     List<ProcessedTransaction> transactions = [];
+    Map<String, MonthClosingData> monthData = {};
+    List<MonthClosing> monthClosings = [];
+    double totalIn = 0.0;
+    double totalOut = 0.0;
     double initialBalance = await _fetchOpeningBalance();
 
-    if (_selectedItem == null && _selectedQuality != null) {
-      return transactions;
+    if (_selectedItem == null || _selectedQuality == null) {
+      return ProcessedData(transactions, totalIn, totalOut, initialBalance, monthClosings);
     }
 
     QuerySnapshot purchasesSnapshot = await _firestore.collection('purchaseinvoices').get();
@@ -112,6 +143,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               0.0,
               date,
             ));
+            totalIn += qty;
           }
         }
       }
@@ -142,6 +174,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               0.0,
               date,
             ));
+            totalOut += qty;
           }
         }
       }
@@ -172,6 +205,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               0.0,
               date,
             ));
+            totalIn += qty;
           }
         }
       }
@@ -192,8 +226,35 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
         runningBalance,
         transaction.date,
       ));
+
+      final monthKey = DateFormat('MMMM yyyy').format(transaction.date);
+      monthData.update(
+        monthKey,
+            (value) => MonthClosingData(
+          value.inQty + transaction.inQty,
+          value.outQty + transaction.outQty,
+          runningBalance,
+        ),
+        ifAbsent: () => MonthClosingData(transaction.inQty, transaction.outQty, runningBalance),
+      );
     }
-    return updatedTransactions;
+
+    monthClosings = monthData.entries.map((entry) {
+      return MonthClosing(
+        entry.key,
+        entry.value.closingBalance,
+        entry.value.inQty,
+        entry.value.outQty,
+      );
+    }).toList();
+
+    monthClosings.sort((a, b) {
+      final aDate = DateFormat('MMMM yyyy').parse(a.monthYear);
+      final bDate = DateFormat('MMMM yyyy').parse(b.monthYear);
+      return aDate.compareTo(bDate);
+    });
+
+    return ProcessedData(updatedTransactions, totalIn, totalOut, runningBalance, monthClosings);
   }
 
   Future<double> _fetchOpeningBalance() async {
@@ -219,21 +280,11 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
   Future<Map<String, dynamic>> _calculateSummary() async {
     if (_selectedQuality == null || _selectedItem == null) return {'totalIn': 0.0, 'totalOut': 0.0, 'finalBalance': 0.0};
 
-    final transactions = await _fetchLedgerTransactions(_selectedQuality!);
-    double totalIn = 0.0;
-    double totalOut = 0.0;
-    double initialBalance = await _fetchOpeningBalance();
-
-    for (var transaction in transactions) {
-      totalIn += transaction.inQty;
-      totalOut += transaction.outQty;
-    }
-    double finalBalance = initialBalance + totalIn - totalOut;
-
+    final data = await _fetchLedgerTransactions(_selectedQuality!);
     return {
-      'totalIn': totalIn,
-      'totalOut': totalOut,
-      'finalBalance': finalBalance,
+      'totalIn': data.totalIn,
+      'totalOut': data.totalOut,
+      'finalBalance': data.finalBalance,
     };
   }
 
@@ -299,289 +350,467 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
 
     try {
       print('Fetching transactions...');
-      final transactions = await _fetchLedgerTransactions(_selectedQuality!);
-      print('Transactions fetched: ${transactions.length}');
-      if (transactions.isEmpty) {
+      final processedData = await _fetchLedgerTransactions(_selectedQuality!);
+      print('Transactions fetched: ${processedData.transactions.length}');
+      if (processedData.transactions.isEmpty) {
         print('No transactions to print');
         _showSnackBar('No transactions found for this quality and item', Colors.orange);
         return;
       }
 
-      // Fetch the opening balance before building the PDF
       print('Fetching opening balance...');
       final openingBalance = await _fetchOpeningBalance();
       print('Opening balance fetched: $openingBalance');
 
       print('Generating PDF...');
       final pdf = pw.Document();
+      final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
 
-      // Load the font
-      final font = await PdfGoogleFonts.robotoRegular();
+      List<dynamic> displayItems = [];
+      int transactionIndex = 0;
+      int monthClosingIndex = 0;
+
+      while (transactionIndex < processedData.transactions.length ||
+          monthClosingIndex < processedData.monthClosings.length) {
+        if (monthClosingIndex >= processedData.monthClosings.length) {
+          displayItems.add(processedData.transactions[transactionIndex]);
+          transactionIndex++;
+          continue;
+        }
+
+        if (transactionIndex >= processedData.transactions.length) {
+          displayItems.add(processedData.monthClosings[monthClosingIndex]);
+          monthClosingIndex++;
+          continue;
+        }
+
+        final transaction = processedData.transactions[transactionIndex];
+        final monthClosing = processedData.monthClosings[monthClosingIndex];
+        final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+        final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+        if (transactionMonth == monthClosing.monthYear) {
+          displayItems.add(transaction);
+          transactionIndex++;
+
+          if (transactionIndex == processedData.transactions.length ||
+              DateFormat('MMMM yyyy').format(processedData.transactions[transactionIndex].date) != monthClosing.monthYear) {
+            displayItems.add(monthClosing);
+            monthClosingIndex++;
+          }
+        } else {
+          final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+          if (transactionDate.isAfter(monthClosingDate)) {
+            displayItems.add(monthClosing);
+            monthClosingIndex++;
+          } else {
+            displayItems.add(transaction);
+            transactionIndex++;
+          }
+        }
+      }
+
+      final List<pw.TableRow> tableRows = [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+          children: [
+            'Sr#',
+            'Date',
+            'Details',
+            'In',
+            'Out',
+            'Balance',
+          ].map((text) => pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.center,
+            child: pw.Text(
+              text,
+              style: pw.TextStyle(
+                color: PdfColors.white,
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          )).toList(),
+        ),
+        ...displayItems.asMap().entries.map((entry) {
+          final int index = entry.key + 1;
+          final item = entry.value;
+
+          if (item is ProcessedTransaction) {
+            return pw.TableRow(
+              children: [
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    index.toString(),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    DateFormat('dd-MM-yyyy').format(item.date),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.details,
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.inQty > 0 ? numberFormat.format(item.inQty) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.outQty > 0 ? numberFormat.format(item.outQty) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    numberFormat.format(item.balance),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+              ],
+            );
+          } else if (item is MonthClosing) {
+            return pw.TableRow(
+              decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+              children: [
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    '',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    'Total in ${item.monthYear}',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    '',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.monthIn > 0 ? numberFormat.format(item.monthIn) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.monthOut > 0 ? numberFormat.format(item.monthOut) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    numberFormat.format(item.closingBalance),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+              ],
+            );
+          }
+          return pw.TableRow(children: List.filled(6, pw.SizedBox()));
+        }),
+      ];
+
+      final List<pw.TableRow> totalsTableRows = [
+        pw.TableRow(children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Total In:',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              numberFormat.format(processedData.totalIn),
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            ),
+          ),
+        ]),
+        pw.TableRow(children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Total Out:',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              numberFormat.format(processedData.totalOut),
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            ),
+          ),
+        ]),
+        pw.TableRow(children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Final Balance:',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              numberFormat.format(processedData.finalBalance),
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            ),
+          ),
+        ]),
+      ];
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
-          build: (pw.Context context) {
-            return [
-              // Header
-              pw.Text(
-                'Product Ledger',
-                style: pw.TextStyle(
-                  font: font,
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.blue,
-                ),
-              ),
-              pw.SizedBox(height: 16),
-
-              // Product Details
-              pw.Container(
-                padding: const pw.EdgeInsets.all(8),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'Product Details',
-                      style: pw.TextStyle(
-                        font: font,
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.blue,
+          margin: const pw.EdgeInsets.all(25),
+          header: (context) => context.pageNumber == 1
+              ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'PRODUCT LEDGER',
+                        style: pw.TextStyle(
+                          fontSize: 22,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#0D6EFD'),
+                        ),
                       ),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Quality',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Popular Foam Center',
+                        style: pw.TextStyle(
+                          fontSize: 15,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      pw.Text(
+                        'Zanana Hospital Road, Bahawalpur (63100)',
+                        style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                      ),
+                    ],
+                  ),
+                  pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
+                ],
+              ),
+              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Quality:',
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 12,
+                          color: PdfColors.black,
                         ),
                       ),
                       pw.Text(
                         _selectedQuality ?? 'N/A',
+                        style: const pw.TextStyle(fontSize: 13, color: PdfColors.black),
+                      ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Item:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
-                        ),
-                      ),
-                    ]),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Item',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
                         ),
                       ),
                       pw.Text(
                         _selectedItem ?? 'N/A',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                      ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Opening Balance:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
-                        ),
-                      ),
-                    ]),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Opening Balance',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
                         ),
                       ),
                       pw.Text(
-                        _formatDouble(openingBalance), // Use the pre-fetched value
+                        numberFormat.format(openingBalance),
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                      ),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'Date Range:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
                         ),
                       ),
-                    ]),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 16),
-
-              // Table Header
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                decoration: const pw.BoxDecoration(
-                  color: PdfColors.blue,
-                  borderRadius: pw.BorderRadius.only(
-                    topLeft: pw.Radius.circular(12),
-                    topRight: pw.Radius.circular(12),
-                  ),
-                ),
-                child: pw.Row(
-                  children: [
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Date',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      flex: 2,
-                      child: pw.Text(
-                        'Details',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'In',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Out',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Balance',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Table Rows
-              ...transactions.map((transaction) {
-                return pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.white,
-                    border: pw.Border(
-                      bottom: pw.BorderSide(color: PdfColors.grey300),
-                      left: pw.BorderSide(color: PdfColors.grey300),
-                      right: pw.BorderSide(color: PdfColors.grey300),
-                    ),
-                  ),
-                  child: pw.Row(
-                    children: [
-                      pw.Expanded(
-                        child: pw.Text(
-                          DateFormat('dd-MM-yyyy').format(transaction.date),
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        flex: 2,
-                        child: pw.Text(
-                          transaction.details,
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: PdfColors.blue,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          transaction.inQty > 0 ? _formatDouble(transaction.inQty) : '-',
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: transaction.inQty > 0 ? PdfColors.green : PdfColors.grey600,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          transaction.outQty > 0 ? _formatDouble(transaction.outQty) : '-',
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: transaction.outQty > 0 ? PdfColors.red : PdfColors.grey600,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          _formatDouble(transaction.balance),
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: transaction.balance >= 0 ? PdfColors.green : PdfColors.red,
-                          ),
-                        ),
+                      pw.Text(
+                        _fromDate != null && _toDate != null
+                            ? '${DateFormat('dd-MM-yyyy').format(_fromDate!)} to ${DateFormat('dd-MM-yyyy').format(_toDate!)}'
+                            : 'All Time',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
                       ),
                     ],
                   ),
-                );
-              }).toList(),
-            ];
-          },
+                ],
+              ),
+              pw.SizedBox(height: 20),
+            ],
+          )
+              : pw.SizedBox(),
+          build: (context) => [
+            pw.Table(
+              columnWidths: {
+                0: const pw.FlexColumnWidth(0.8),  // Sr#
+                1: const pw.FlexColumnWidth(1.5),  // Date
+                2: const pw.FlexColumnWidth(3.0),  // Details
+                3: const pw.FlexColumnWidth(1.5),  // In
+                4: const pw.FlexColumnWidth(1.5),  // Out
+                5: const pw.FlexColumnWidth(1.5),  // Balance
+              },
+              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+              defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+              children: tableRows,
+            ),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 220,
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 0.5),
+                  borderRadius: pw.BorderRadius.circular(5),
+                ),
+                child: pw.Table(
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(2),
+                    1: const pw.FlexColumnWidth(1),
+                  },
+                  border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+                  defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                  children: totalsTableRows,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 220,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8F9FA'),
+                  borderRadius: pw.BorderRadius.circular(5),
+                  border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'TOTAL TRANSACTIONS',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.black,
+                      ),
+                    ),
+                    pw.Text(
+                      processedData.transactions.length.toString(),
+                      style: pw.TextStyle(
+                        fontSize: 13,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#0D6EFD'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          footer: (context) => context.pageNumber == context.pagesCount
+              ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(height: 20),
+              pw.Divider(thickness: 0.5, color: PdfColors.black),
+              pw.Text(
+                'Contact: 0302-9596046 | FB: Popular Foam Center',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Page ${context.pageNumber} of ${context.pagesCount}',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+              ),
+              pw.SizedBox(height: 10),
+            ],
+          )
+              : pw.Text(
+            'Page ${context.pageNumber} of ${context.pagesCount}',
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            textAlign: pw.TextAlign.center,
+          ),
         ),
       );
 
@@ -589,6 +818,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       try {
         final printed = await Printing.layoutPdf(
           onLayout: (PdfPageFormat format) async => pdf.save(),
+          name: 'PFC-PRODUCT-LEDGER-${_selectedItem}-${DateTime.now().millisecondsSinceEpoch}-A4',
         );
         if (printed) {
           print('Printing successful');
@@ -787,7 +1017,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
             if (_selectedQuality != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: _buildOpeningBalanceCard(),
+                child: _buildOpening612BalanceCard(), // Corrected method name
               ),
               Expanded(child: isDesktop ? _buildDesktopLayout() : _buildMobileLayout()),
             ],
@@ -817,7 +1047,7 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
       return Center(child: Text('Please select a quality and item', style: TextStyle(color: _textColor)));
     }
 
-    return FutureBuilder<List<ProcessedTransaction>>(
+    return FutureBuilder<ProcessedData>(
       future: _fetchLedgerTransactions(_selectedQuality!),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -827,9 +1057,52 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: _textColor)));
         }
 
-        final transactions = snapshot.data ?? [];
-        if (transactions.isEmpty) {
+        final data = snapshot.data!;
+        if (data.transactions.isEmpty) {
           return Center(child: Text('No transactions found', style: TextStyle(color: _textColor)));
+        }
+
+        List<dynamic> displayItems = [];
+        int transactionIndex = 0;
+        int monthClosingIndex = 0;
+
+        while (transactionIndex < data.transactions.length || monthClosingIndex < data.monthClosings.length) {
+          if (monthClosingIndex >= data.monthClosings.length) {
+            displayItems.add(data.transactions[transactionIndex]);
+            transactionIndex++;
+            continue;
+          }
+
+          if (transactionIndex >= data.transactions.length) {
+            displayItems.add(data.monthClosings[monthClosingIndex]);
+            monthClosingIndex++;
+            continue;
+          }
+
+          final transaction = data.transactions[transactionIndex];
+          final monthClosing = data.monthClosings[monthClosingIndex];
+          final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+          final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+          if (transactionMonth == monthClosing.monthYear) {
+            displayItems.add(transaction);
+            transactionIndex++;
+
+            if (transactionIndex == data.transactions.length ||
+                DateFormat('MMMM yyyy').format(data.transactions[transactionIndex].date) != monthClosing.monthYear) {
+              displayItems.add(monthClosing);
+              monthClosingIndex++;
+            }
+          } else {
+            final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+            if (transactionDate.isAfter(monthClosingDate)) {
+              displayItems.add(monthClosing);
+              monthClosingIndex++;
+            } else {
+              displayItems.add(transaction);
+              transactionIndex++;
+            }
+          }
         }
 
         return Column(
@@ -840,8 +1113,16 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemCount: transactions.length,
-                itemBuilder: (context, index) => _buildTableRow(transactions[index], isDesktop),
+                itemCount: displayItems.length,
+                itemBuilder: (context, index) {
+                  final item = displayItems[index];
+                  if (item is ProcessedTransaction) {
+                    return _buildTableRow(item, isDesktop);
+                  } else if (item is MonthClosing) {
+                    return _buildMonthClosingRow(item);
+                  }
+                  return const SizedBox.shrink();
+                },
               ),
             ),
           ],
@@ -888,48 +1169,45 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
           children: [
             isDesktop
                 ? Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(transaction.date)))
-                : _DataCell(DateFormat('dd-MM-yyyy').format(transaction.date), 150),
+                : _DataCell(DateFormat('dd-MM-yyyy').format(transaction.date), width: 150),
             isDesktop
-                ? Expanded(flex: 2, child: _DataCell(transaction.details, null, _primaryColor))
-                : _DataCell(transaction.details, 300, _primaryColor),
+                ? Expanded(flex: 2, child: _DataCell(transaction.details, color: _primaryColor))
+                : _DataCell(transaction.details, width: 300, color: _primaryColor),
             isDesktop
                 ? Expanded(
               child: _DataCell(
                 transaction.inQty > 0 ? _formatDouble(transaction.inQty) : '-',
-                null,
-                transaction.inQty > 0 ? Colors.green : _secondaryTextColor,
+                color: transaction.inQty > 0 ? Colors.green : _secondaryTextColor,
               ),
             )
                 : _DataCell(
               transaction.inQty > 0 ? _formatDouble(transaction.inQty) : '-',
-              150,
-              transaction.inQty > 0 ? Colors.green : _secondaryTextColor,
+              width: 150,
+              color: transaction.inQty > 0 ? Colors.green : _secondaryTextColor,
             ),
             isDesktop
                 ? Expanded(
               child: _DataCell(
                 transaction.outQty > 0 ? _formatDouble(transaction.outQty) : '-',
-                null,
-                transaction.outQty > 0 ? Colors.red : _secondaryTextColor,
+                color: transaction.outQty > 0 ? Colors.red : _secondaryTextColor,
               ),
             )
                 : _DataCell(
               transaction.outQty > 0 ? _formatDouble(transaction.outQty) : '-',
-              150,
-              transaction.outQty > 0 ? Colors.red : _secondaryTextColor,
+              width: 150,
+              color: transaction.outQty > 0 ? Colors.red : _secondaryTextColor,
             ),
             isDesktop
                 ? Expanded(
               child: _DataCell(
                 _formatDouble(transaction.balance),
-                null,
-                transaction.balance >= 0 ? Colors.green : Colors.red,
+                color: transaction.balance >= 0 ? Colors.green : Colors.red,
               ),
             )
                 : _DataCell(
               _formatDouble(transaction.balance),
-              150,
-              transaction.balance >= 0 ? Colors.green : Colors.red,
+              width: 150,
+              color: transaction.balance >= 0 ? Colors.green : Colors.red,
             ),
           ],
         ),
@@ -937,7 +1215,46 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     ),
   );
 
-  Widget _buildOpeningBalanceCard() => FutureBuilder<double>(
+  Widget _buildMonthClosingRow(MonthClosing mc) => Container(
+    height: 56,
+    decoration: BoxDecoration(
+      color: _primaryColor,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4))],
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Expanded(child: _DataCell('Total in')),
+          Expanded(child: _DataCell(mc.monthYear, color: Colors.white)),
+          Expanded(
+            child: _DataCell(
+              mc.monthIn > 0 ? _formatDouble(mc.monthIn) : '-',
+              width: null,
+              color: Colors.white,
+            ),
+          ),
+          Expanded(
+            child: _DataCell(
+              mc.monthOut > 0 ? _formatDouble(mc.monthOut) : '-',
+              width: null,
+              color: Colors.white,
+            ),
+          ),
+          Expanded(
+            child: _DataCell(
+              _formatDouble(mc.closingBalance),
+              width: null,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildOpening612BalanceCard() => FutureBuilder<double>(
     future: _fetchOpeningBalance(),
     builder: (context, snapshot) {
       if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1020,7 +1337,6 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     builder: (context, snapshot) {
       if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
       List<String> qualities = snapshot.data!.docs.map((doc) => doc['name'] as String).toList();
-      // Sort qualities alphabetically
       qualities.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       print('Sorted qualities list: $qualities');
 
@@ -1127,7 +1443,6 @@ class _ProductLedgerPageState extends State<ProductLedgerPage> {
     builder: (context, snapshot) {
       if (!snapshot.hasData) return CircularProgressIndicator(color: _primaryColor, strokeWidth: 2);
       List<String> items = snapshot.data!.docs.map((doc) => doc['itemName'] as String).toList();
-      // Sort items alphabetically
       items.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       print('Sorted items list: $items');
 
@@ -1259,7 +1574,7 @@ class _DataCell extends StatelessWidget {
   final double? width;
   final Color? color;
 
-  const _DataCell(this.text, [this.width, this.color]);
+  const _DataCell(this.text, {this.width, this.color});
 
   @override
   Widget build(BuildContext context) {

@@ -36,15 +36,33 @@ class AccountTotal {
   AccountTotal(this.credit, this.debit);
 }
 
+class MonthClosing {
+  final String monthYear; // e.g., "October 2023"
+  final double closingBalance;
+  final double monthCredit;
+  final double monthDebit;
+
+  MonthClosing(this.monthYear, this.closingBalance, this.monthCredit, this.monthDebit);
+}
+
+class MonthClosingData {
+  final double credit;
+  final double debit;
+  final double closingBalance;
+
+  MonthClosingData(this.credit, this.debit, this.closingBalance);
+}
+
 class ProcessedData {
   final List<ProcessedTransaction> transactions;
   final double totalCredit;
   final double totalDebit;
   final double finalBalance;
   final Map<String, AccountTotal> accountTotals;
+  final List<MonthClosing> monthClosings; // Added for month-wise closings
 
   ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.finalBalance,
-      this.accountTotals);
+      this.accountTotals, this.monthClosings);
 }
 
 class CompanyLedgerPage extends StatefulWidget {
@@ -122,6 +140,8 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     double currentBalance = _balanceAmount;
     Map<String, AccountTotal> accountTotals = {};
     List<ProcessedTransaction> processed = [];
+    Map<String, MonthClosingData> monthData = {};
+    List<MonthClosing> monthClosings = [];
 
     print('Processing ${transactions.length} transactions...');
     transactions.sort((a, b) {
@@ -146,10 +166,13 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
       String type;
       String accountName;
+      double credit = 0.0;
+      double debit = 0.0;
 
       if (isPurchase) {
         type = 'Credit';
         accountName = 'Purchase Invoices';
+        credit = amount;
         totalCredit += amount;
         currentBalance += amount;
         print('Processed Purchase Invoice ${doc.id}: Amount: $amount, Balance: $currentBalance');
@@ -167,14 +190,28 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         }
 
         if (type == 'Credit') {
+          credit = amount;
           totalCredit += amount;
           currentBalance += amount;
         } else {
+          debit = amount;
           totalDebit += amount;
           currentBalance -= amount;
         }
         print('Processed Cash Transaction ${doc.id}: Type: $type, Amount: $amount, Balance: $currentBalance');
       }
+
+      // Update month-wise data
+      final monthKey = DateFormat('MMMM yyyy').format(date);
+      monthData.update(
+        monthKey,
+            (value) => MonthClosingData(
+          value.credit + credit,
+          value.debit + debit,
+          currentBalance,
+        ),
+        ifAbsent: () => MonthClosingData(credit, debit, currentBalance),
+      );
 
       accountTotals.update(
         accountName,
@@ -199,8 +236,24 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       ));
     }
 
+    // Create month closings list
+    monthClosings = monthData.entries.map((entry) {
+      return MonthClosing(
+        entry.key,
+        entry.value.closingBalance,
+        entry.value.credit,
+        entry.value.debit,
+      );
+    }).toList();
+
+    monthClosings.sort((a, b) {
+      final aDate = DateFormat('MMMM yyyy').parse(a.monthYear);
+      final bDate = DateFormat('MMMM yyyy').parse(b.monthYear);
+      return aDate.compareTo(bDate);
+    });
+
     print('Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit');
-    return ProcessedData(processed, totalCredit, totalDebit, currentBalance, accountTotals);
+    return ProcessedData(processed, totalCredit, totalDebit, currentBalance, accountTotals, monthClosings);
   }
 
   DateTime? _getDate(DocumentSnapshot doc) {
@@ -303,303 +356,474 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
       print('Generating PDF...');
       final pdf = pw.Document();
+      final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
 
-      // Load the font
-      final font = await PdfGoogleFonts.robotoRegular();
+      // Prepare display items (transactions and month closings)
+      List<dynamic> displayItems = [];
+      int transactionIndex = 0;
+      int monthClosingIndex = 0;
+
+      while (transactionIndex < processedData.transactions.length ||
+          monthClosingIndex < processedData.monthClosings.length) {
+        if (monthClosingIndex >= processedData.monthClosings.length) {
+          displayItems.add(processedData.transactions[transactionIndex]);
+          transactionIndex++;
+          continue;
+        }
+
+        if (transactionIndex >= processedData.transactions.length) {
+          displayItems.add(processedData.monthClosings[monthClosingIndex]);
+          monthClosingIndex++;
+          continue;
+        }
+
+        final transaction = processedData.transactions[transactionIndex];
+        final monthClosing = processedData.monthClosings[monthClosingIndex];
+        final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+        final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+        if (transactionMonth == monthClosing.monthYear) {
+          displayItems.add(transaction);
+          transactionIndex++;
+
+          if (transactionIndex == processedData.transactions.length ||
+              DateFormat('MMMM yyyy').format(processedData.transactions[transactionIndex].date) != monthClosing.monthYear) {
+            displayItems.add(monthClosing);
+            monthClosingIndex++;
+          }
+        } else {
+          final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+          if (transactionDate.isAfter(monthClosingDate)) {
+            displayItems.add(monthClosing);
+            monthClosingIndex++;
+          } else {
+            displayItems.add(transaction);
+            transactionIndex++;
+          }
+        }
+      }
+
+      // Build the table rows for transactions and month closings
+      final List<pw.TableRow> tableRows = [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+          children: [
+            'Sr#',
+            'Date',
+            'Details',
+            'Credit',
+            'Debit',
+            'Balance',
+          ].map((text) => pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.center,
+            child: pw.Text(
+              text,
+              style: pw.TextStyle(
+                color: PdfColors.white, // Header text remains white for contrast
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          )).toList(),
+        ),
+        ...displayItems.asMap().entries.map((entry) {
+          final int index = entry.key + 1;
+          final item = entry.value;
+
+          if (item is ProcessedTransaction) {
+            final isPurchase = item.doc.reference.parent.id == 'purchaseinvoices';
+            String details = isPurchase
+                ? 'Invoice ${item.doc['invoiceId'] ?? 'N/A'}'
+                : item.accountName ?? 'Unknown Account';
+
+            return pw.TableRow(
+              children: [
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    index.toString(),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    DateFormat('dd-MM-yyyy').format(item.date),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    details,
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.creditAmount > 0 ? numberFormat.format(item.creditAmount) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.debitAmount > 0 ? numberFormat.format(item.debitAmount) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    numberFormat.format(item.balance),
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                  ),
+                ),
+              ],
+            );
+          } else if (item is MonthClosing) {
+            return pw.TableRow(
+              decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+              children: [
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    '',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    'Total in ${item.monthYear}',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    '',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.monthCredit > 0 ? numberFormat.format(item.monthCredit) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    item.monthDebit > 0 ? numberFormat.format(item.monthDebit) : '-',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(3),
+                  alignment: pw.Alignment.center,
+                  child: pw.Text(
+                    '${numberFormat.format(item.closingBalance)} (${item.closingBalance >= 0 ? "Cr" : "Dr"})',
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                  ),
+                ),
+              ],
+            );
+          }
+          return pw.TableRow(children: List.filled(6, pw.SizedBox()));
+        }),
+      ];
+
+      // Build the totals table rows
+      final List<pw.TableRow> totalsTableRows = [
+        pw.TableRow(children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Total Credit:',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              numberFormat.format(processedData.totalCredit),
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            ),
+          ),
+        ]),
+        pw.TableRow(children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Total Debit:',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              numberFormat.format(processedData.totalDebit),
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            ),
+          ),
+        ]),
+        pw.TableRow(children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Final Balance:',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+            ),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(3),
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              numberFormat.format(processedData.finalBalance),
+              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            ),
+          ),
+        ]),
+      ];
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
-          build: (pw.Context context) {
-            return [
-              // Header
-              pw.Text(
-                'Company Ledger',
-                style: pw.TextStyle(
-                  font: font,
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.blue,
-                ),
-              ),
-              pw.SizedBox(height: 16),
-
-              // Company Details
-              pw.Container(
-                padding: const pw.EdgeInsets.all(8),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.grey300),
-                  borderRadius: pw.BorderRadius.circular(8),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'Company Details',
-                      style: pw.TextStyle(
-                        font: font,
-                        fontSize: 14,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.blue,
+          margin: const pw.EdgeInsets.all(25),
+          header: (context) => context.pageNumber == 1
+              ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'COMPANY LEDGER',
+                        style: pw.TextStyle(
+                          fontSize: 22,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#0D6EFD'), // Title remains blue
+                        ),
                       ),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Name',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Popular Foam Center',
+                        style: pw.TextStyle(
+                          fontSize: 15,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
+                      ),
+                      pw.Text(
+                        'Zanana Hospital Road, Bahawalpur (63100)',
+                        style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                      ),
+                    ],
+                  ),
+                  pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
+                ],
+              ),
+              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Company:',
+                        style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 12,
+                          color: PdfColors.black,
                         ),
                       ),
                       pw.Text(
                         _selectedCompanyName ?? 'N/A',
+                        style: const pw.TextStyle(fontSize: 13, color: PdfColors.black),
+                      ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Balance Limit:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
-                        ),
-                      ),
-                    ]),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Balance Limit',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
                         ),
                       ),
                       pw.Text(
-                        '${_balanceLimit.toStringAsFixed(0)}/-',
+                        numberFormat.format(_balanceLimit),
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                      ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Account Type:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
-                        ),
-                      ),
-                    ]),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Account Type',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
                         ),
                       ),
                       pw.Text(
                         _openingType ?? 'N/A',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                      ),
+                      pw.SizedBox(height: 6),
+                      pw.Text(
+                        'Opening Date:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
-                        ),
-                      ),
-                    ]),
-                    pw.SizedBox(height: 4),
-                    pw.Row(children: [
-                      pw.SizedBox(
-                        width: 100,
-                        child: pw.Text(
-                          'Opening Date',
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey600,
-                          ),
                         ),
                       ),
                       pw.Text(
                         _formatDate(_openingDate),
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+                      ),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'Date Range:',
                         style: pw.TextStyle(
-                          font: font,
+                          fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
                           color: PdfColors.black,
                         ),
                       ),
-                    ]),
-                  ],
-                ),
-              ),
-              pw.SizedBox(height: 16),
-
-              // Table Header
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                decoration: const pw.BoxDecoration(
-                  color: PdfColors.blue,
-                  borderRadius: pw.BorderRadius.only(
-                    topLeft: pw.Radius.circular(12),
-                    topRight: pw.Radius.circular(12),
-                  ),
-                ),
-                child: pw.Row(
-                  children: [
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Date',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Details',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Credit',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Debit',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Text(
-                        'Balance',
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          font: font,
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Table Rows
-              ...processedData.transactions.map((pt) {
-                final isPurchase = pt.doc.reference.parent.id == 'purchaseinvoices';
-                String details;
-                if (isPurchase) {
-                  details = 'Invoice ${pt.doc['invoiceId'] ?? 'N/A'}';
-                } else {
-                  details = pt.accountName ?? 'Unknown Account';
-                }
-
-                return pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.white,
-                    border: pw.Border(
-                      bottom: pw.BorderSide(color: PdfColors.grey300),
-                      left: pw.BorderSide(color: PdfColors.grey300),
-                      right: pw.BorderSide(color: PdfColors.grey300),
-                    ),
-                  ),
-                  child: pw.Row(
-                    children: [
-                      pw.Expanded(
-                        child: pw.Text(
-                          DateFormat('dd-MM-yyyy').format(pt.date),
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: PdfColors.black,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          details,
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: isPurchase ? PdfColors.blue : PdfColors.black,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: pt.creditAmount > 0 ? PdfColors.green : PdfColors.grey600,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: pt.debitAmount > 0 ? PdfColors.red : PdfColors.grey600,
-                          ),
-                        ),
-                      ),
-                      pw.Expanded(
-                        child: pw.Text(
-                          '${pt.balance.toStringAsFixed(0)}/-',
-                          textAlign: pw.TextAlign.center,
-                          style: pw.TextStyle(
-                            font: font,
-                            fontSize: 12,
-                            color: pt.balance >= 0 ? PdfColors.green : PdfColors.red,
-                          ),
-                        ),
+                      pw.Text(
+                        _fromDate != null && _toDate != null
+                            ? '${DateFormat('dd-MM-yyyy').format(_fromDate!)} to ${DateFormat('dd-MM-yyyy').format(_toDate!)}'
+                            : 'All Time',
+                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
                       ),
                     ],
                   ),
-                );
-              }).toList(),
-            ];
-          },
+                ],
+              ),
+              pw.SizedBox(height: 20),
+            ],
+          )
+              : pw.SizedBox(),
+          build: (context) => [
+            pw.Table(
+              columnWidths: {
+                0: const pw.FlexColumnWidth(0.8),  // Sr#
+                1: const pw.FlexColumnWidth(1.5),  // Date
+                2: const pw.FlexColumnWidth(3.0),  // Details
+                3: const pw.FlexColumnWidth(1.5),  // Credit
+                4: const pw.FlexColumnWidth(1.5),  // Debit
+                5: const pw.FlexColumnWidth(1.5),  // Balance
+              },
+              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+              defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+              children: tableRows,
+            ),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 220,
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 0.5),
+                  borderRadius: pw.BorderRadius.circular(5),
+                ),
+                child: pw.Table(
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(2),
+                    1: const pw.FlexColumnWidth(1),
+                  },
+                  border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+                  defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+                  children: totalsTableRows,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 220,
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F8F9FA'),
+                  borderRadius: pw.BorderRadius.circular(5),
+                  border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'TOTAL TRANSACTIONS',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.black,
+                      ),
+                    ),
+                    pw.Text(
+                      processedData.transactions.length.toString(),
+                      style: pw.TextStyle(
+                        fontSize: 13,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#0D6EFD'), // Remains blue as per purchase order
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          footer: (context) => context.pageNumber == context.pagesCount
+              ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(height: 20),
+              pw.Divider(thickness: 0.5, color: PdfColors.black),
+              pw.Text(
+                'Contact: 0302-9596046 | FB: Popular Foam Center',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                textAlign: pw.TextAlign.center,
+              ),
+              pw.Text(
+                'Page ${context.pageNumber} of ${context.pagesCount}',
+                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+              ),
+              pw.SizedBox(height: 10),
+            ],
+          )
+              : pw.Text(
+            'Page ${context.pageNumber} of ${context.pagesCount}',
+            style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+            textAlign: pw.TextAlign.center,
+          ),
         ),
       );
 
@@ -607,6 +831,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       try {
         final printed = await Printing.layoutPdf(
           onLayout: (PdfPageFormat format) async => pdf.save(),
+          name: 'PFC-LEDGER-${_selectedCompanyId}-${DateTime.now().millisecondsSinceEpoch}-A4',
         );
         if (printed) {
           print('Printing successful');
@@ -798,6 +1023,51 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                         }
 
                         final data = asyncSnapshot.data!;
+                        List<dynamic> displayItems = [];
+                        int transactionIndex = 0;
+                        int monthClosingIndex = 0;
+
+                        while (transactionIndex < data.transactions.length ||
+                            monthClosingIndex < data.monthClosings.length) {
+                          if (monthClosingIndex >= data.monthClosings.length) {
+                            displayItems.add(data.transactions[transactionIndex]);
+                            transactionIndex++;
+                            continue;
+                          }
+
+                          if (transactionIndex >= data.transactions.length) {
+                            displayItems.add(data.monthClosings[monthClosingIndex]);
+                            monthClosingIndex++;
+                            continue;
+                          }
+
+                          final transaction = data.transactions[transactionIndex];
+                          final monthClosing = data.monthClosings[monthClosingIndex];
+                          final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+                          final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+                          if (transactionMonth == monthClosing.monthYear) {
+                            displayItems.add(transaction);
+                            transactionIndex++;
+
+                            if (transactionIndex == data.transactions.length ||
+                                DateFormat('MMMM yyyy').format(data.transactions[transactionIndex].date) !=
+                                    monthClosing.monthYear) {
+                              displayItems.add(monthClosing);
+                              monthClosingIndex++;
+                            }
+                          } else {
+                            final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+                            if (transactionDate.isAfter(monthClosingDate)) {
+                              displayItems.add(monthClosing);
+                              monthClosingIndex++;
+                            } else {
+                              displayItems.add(transaction);
+                              transactionIndex++;
+                            }
+                          }
+                        }
+
                         return Column(
                           children: [
                             _buildTableHeader(),
@@ -805,10 +1075,17 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                             Expanded(
                               child: ListView.separated(
                                 padding: const EdgeInsets.symmetric(horizontal: 24),
-                                itemCount: data.transactions.length,
+                                itemCount: displayItems.length,
                                 separatorBuilder: (context, index) => const SizedBox(height: 8),
-                                itemBuilder: (context, index) =>
-                                    _buildTransactionRow(data.transactions[index]),
+                                itemBuilder: (context, index) {
+                                  final item = displayItems[index];
+                                  if (item is ProcessedTransaction) {
+                                    return _buildTransactionRow(item);
+                                  } else if (item is MonthClosing) {
+                                    return _buildMonthClosingRow(item);
+                                  }
+                                  return const SizedBox.shrink();
+                                },
                               ),
                             ),
                           ],
@@ -1119,6 +1396,50 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
               child: _DataCell(
                 '${pt.balance.toStringAsFixed(0)}/-',
                 color: pt.balance >= 0 ? Colors.green : Colors.red,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthClosingRow(MonthClosing mc) {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: _primaryColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Expanded(child: _DataCell('Total in')),
+            Expanded(child: _DataCell(mc.monthYear, color: Colors.white)),
+            Expanded(
+              child: _DataCell(
+                mc.monthCredit > 0 ? '${mc.monthCredit.toStringAsFixed(0)}/-' : '-',
+                color: Colors.white,
+              ),
+            ),
+            Expanded(
+              child: _DataCell(
+                mc.monthDebit > 0 ? '${mc.monthDebit.toStringAsFixed(0)}/-' : '-',
+                color: Colors.white,
+              ),
+            ),
+            Expanded(
+              child: _DataCell(
+                '${mc.closingBalance.toStringAsFixed(0)} (${mc.closingBalance >= 0 ? "Cr" : "Dr"})',
+                color: Colors.white,
               ),
             ),
           ],
