@@ -3,7 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
 
-import 'Home.dart'; // Assuming Home.dart contains the HomePage class
+// Assuming Home.dart contains the HomePage class
+// import 'Home.dart';
 
 // Color Scheme for Light Mode
 const Color _primaryColor = Color(0xFF0D6EFD);
@@ -33,7 +34,7 @@ class MyApp extends StatelessWidget {
         primaryColor: _primaryColor,
         scaffoldBackgroundColor: _backgroundColor,
       ),
-      home: HomePage(), // Changed to HomePage as the entry point
+      home: HomePage(), // Replace with actual HomePage widget
     );
   }
 }
@@ -95,9 +96,11 @@ class _AddItemsState extends State<AddItems> {
                 const SizedBox(height: 16),
                 _buildTextFormField('Item Name', _itemNameController),
                 _buildTextFormField('Purchase Price', _purchasePriceController, isNumeric: true),
-                _buildTextFormField('Sale Price', _salePriceController, isNumeric: true),
-                _buildTextFormField('OP. Stock', _openingStockController, isNumeric: true),
-                _buildTextFormField('C. Stock', _stockController, isNumeric: true),
+                _buildTextFormField('Sale Price', _salePriceController,
+
+                    isNumeric: true),
+                _buildTextFormField('OP. Stock', _openingStockController, isNumeric: true, allowDecimal: true),
+                _buildTextFormField('C. Stock', _stockController, isNumeric: true, allowDecimal: true),
               ]),
               const SizedBox(height: 24),
               _buildFormSection('Dimensions', [
@@ -152,7 +155,7 @@ class _AddItemsState extends State<AddItems> {
     );
   }
 
-  Widget _buildTextFormField(String label, TextEditingController controller, {bool isNumeric = false}) {
+  Widget _buildTextFormField(String label, TextEditingController controller, {bool isNumeric = false, bool allowDecimal = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -172,7 +175,7 @@ class _AddItemsState extends State<AddItems> {
             fontSize: 14,
           ),
           decoration: _inputDecoration(),
-          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+          keyboardType: isNumeric ? (allowDecimal ? TextInputType.numberWithOptions(decimal: true) : TextInputType.number) : TextInputType.text,
           validator: (value) => value!.isEmpty ? 'Required field' : null,
         ),
         const SizedBox(height: 16),
@@ -195,7 +198,7 @@ class _AddItemsState extends State<AddItems> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
-          keyboardType: TextInputType.number,
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
           decoration: _inputDecoration(),
           style: TextStyle(
             color: widget.isDarkMode ? _darkTextColor : _textColor,
@@ -356,7 +359,7 @@ class _AddItemsState extends State<AddItems> {
   Future<void> _addItem() async {
     if (_formKey.currentState!.validate()) {
       try {
-        int openingStock = int.parse(_openingStockController.text);
+        double openingStock = double.parse(_openingStockController.text);
         await _items.add({
           'itemName': _itemNameController.text.trim(),
           'purchasePrice': double.parse(_purchasePriceController.text),
@@ -365,7 +368,7 @@ class _AddItemsState extends State<AddItems> {
           'width': double.parse(_widthController.text),
           'height': double.parse(_heightController.text),
           'openingStock': openingStock,
-          'stockQuantity': openingStock,
+          'stockQuantity': double.parse(_stockController.text),
           'covered': _coveredOption,
           'qualityId': _selectedQualityId,
           'qualityName': _selectedQualityName,
@@ -413,7 +416,7 @@ class _InventoryPageState extends State<InventoryPage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _horizontalScrollController = ScrollController();
   String _searchQuery = '';
-  final double _mobileTableWidth = 1620; // Increased to accommodate wider Item Name and gap
+  final double _mobileTableWidth = 1620;
 
   @override
   void dispose() {
@@ -516,7 +519,7 @@ class _InventoryPageState extends State<InventoryPage> {
     String? selectedQualityName = item['qualityName'];
 
     final _formKey = GlobalKey<FormState>();
-    final int initialStockQuantity = item['stockQuantity'];
+    final double initialStockQuantity = item['stockQuantity'];
 
     await showDialog(
       context: context,
@@ -665,8 +668,8 @@ class _InventoryPageState extends State<InventoryPage> {
                       _buildTextFormField('Item Name', nameController),
                       _buildTextFormField('Purchase Price', purchaseController, isNumeric: true),
                       _buildTextFormField('Sale Price', saleController, isNumeric: true),
-                      _buildTextFormField('OP. Stock', openingStockController, isNumeric: true),
-                      _buildTextFormField('C. Stock', stockController, isNumeric: true),
+                      _buildTextFormField('OP. Stock', openingStockController, isNumeric: true, allowDecimal: true),
+                      _buildTextFormField('C. Stock', stockController, isNumeric: true, allowDecimal: true),
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -686,14 +689,14 @@ class _InventoryPageState extends State<InventoryPage> {
                         ),
                         onPressed: () async {
                           if (_formKey.currentState!.validate()) {
-                            int newOpeningStock = int.parse(openingStockController.text);
-                            int currentStock = item['stockQuantity'];
-                            int currentOpeningStock = item['openingStock'];
-                            int newStockQuantity = int.parse(stockController.text);
+                            double newOpeningStock = double.parse(openingStockController.text);
+                            double currentStock = item['stockQuantity'];
+                            double currentOpeningStock = item['openingStock'];
+                            double newStockQuantity = double.parse(stockController.text);
 
-                            int stockAdjustment = newOpeningStock - currentOpeningStock;
-                            int calculatedStock = currentStock + stockAdjustment;
-                            int updatedStock = (newStockQuantity != initialStockQuantity)
+                            double stockAdjustment = newOpeningStock - currentOpeningStock;
+                            double calculatedStock = currentStock + stockAdjustment;
+                            double updatedStock = (newStockQuantity != initialStockQuantity)
                                 ? newStockQuantity
                                 : calculatedStock;
 
@@ -740,7 +743,7 @@ class _InventoryPageState extends State<InventoryPage> {
     heightController.dispose();
   }
 
-  Widget _buildTextFormField(String label, TextEditingController controller, {bool isNumeric = false}) {
+  Widget _buildTextFormField(String label, TextEditingController controller, {bool isNumeric = false, bool allowDecimal = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -760,7 +763,7 @@ class _InventoryPageState extends State<InventoryPage> {
             fontSize: 14,
           ),
           decoration: _inputDecoration(),
-          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+          keyboardType: isNumeric ? (allowDecimal ? TextInputType.numberWithOptions(decimal: true) : TextInputType.number) : TextInputType.text,
           validator: (value) => value!.isEmpty ? 'Required field' : null,
         ),
         const SizedBox(height: 16),
@@ -783,7 +786,7 @@ class _InventoryPageState extends State<InventoryPage> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
-          keyboardType: TextInputType.number,
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
           decoration: _inputDecoration(),
           style: TextStyle(
             color: widget.isDarkMode ? _darkTextColor : _textColor,
@@ -991,8 +994,8 @@ class _InventoryPageState extends State<InventoryPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            Expanded(flex: 2, child: _HeaderCell('Item Name')), // Increased flex for more space
-            SizedBox(width: 20), // Gap after Item Name
+            Expanded(flex: 2, child: _HeaderCell('Item Name')),
+            SizedBox(width: 20),
             Expanded(child: _HeaderCell('Purchase')),
             Expanded(child: _HeaderCell('Sale')),
             Expanded(child: _HeaderCell('OP. Stock')),
@@ -1026,8 +1029,8 @@ class _InventoryPageState extends State<InventoryPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            _HeaderCell('Item Name', 400), // Increased width to 400
-            SizedBox(width: 20), // Gap after Item Name
+            _HeaderCell('Item Name', 400),
+            SizedBox(width: 20),
             _HeaderCell('Purchase', 100),
             _HeaderCell('Sale', 100),
             _HeaderCell('OP. Stock', 100),
@@ -1065,9 +1068,9 @@ class _InventoryPageState extends State<InventoryPage> {
         child: Row(
           children: [
             Expanded(flex: 2, child: _DataCell('${item['qualityName']}: ${item['itemName']}')),
-            SizedBox(width: 20), // Gap after Item Name
-            Expanded(child: _DataCell(item['purchasePrice'].toInt().toString())),
-            Expanded(child: _DataCell(item['salePrice'].toInt().toString())),
+            SizedBox(width: 20),
+            Expanded(child: _DataCell(item['purchasePrice'].toString())),
+            Expanded(child: _DataCell(item['salePrice'].toString())),
             Expanded(child: _DataCell(item['openingStock'].toString())),
             Expanded(child: _DataCell(item['stockQuantity'].toString())),
             Expanded(child: _DataCell(item['packagingUnit'] ?? 'N/A')),
@@ -1109,10 +1112,10 @@ class _InventoryPageState extends State<InventoryPage> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            _DataCell('${item['qualityName']}: ${item['itemName']}', 400), // Increased width to 400
-            SizedBox(width: 20), // Gap after Item Name
-            _DataCell(item['purchasePrice'].toInt().toString(), 100),
-            _DataCell(item['salePrice'].toInt().toString(), 100),
+            _DataCell('${item['qualityName']}: ${item['itemName']}', 400),
+            SizedBox(width: 20),
+            _DataCell(item['purchasePrice'].toString(), 100),
+            _DataCell(item['salePrice'].toString(), 100),
             _DataCell(item['openingStock'].toString(), 100),
             _DataCell(item['stockQuantity'].toString(), 100),
             _DataCell(item['packagingUnit'] ?? 'N/A', 100),
@@ -1224,7 +1227,6 @@ class _DataCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = (context.findAncestorWidgetOfExactType<InventoryPage>() as InventoryPage?)?.isDarkMode ?? false;
-    // Check if this is the Item Name column by width or context
     bool isItemName = width == 400 || (width == null && context.findAncestorWidgetOfExactType<Expanded>()?.flex == 2);
     return SizedBox(
       width: width,
@@ -1273,6 +1275,17 @@ class _ActionCell extends StatelessWidget {
             onPressed: () => onDelete(item.id),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Text('Home Page Placeholder'),
       ),
     );
   }

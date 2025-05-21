@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // For RawKeyboard
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,1728 +15,1746 @@ import 'package:path_provider/path_provider.dart'; // For temporary file storage
 import 'pointofsale.dart'; // Assuming this contains Invoice class and PointOfSalePage
 
 class ProcessedTransaction {
-  final DocumentSnapshot doc;
-  final String type;
-  final double creditAmount;
-  final double debitAmount;
-  final double paidAmount;
-  final double balance;
-  final DateTime date;
-  final String? accountName; // Added to store account name for cash transactions
+final DocumentSnapshot doc;
+final String type;
+final double creditAmount;
+final double debitAmount;
+final double paidAmount;
+final double balance;
+final DateTime date;
+final String? accountName; // Added to store account name for cash transactions
 
-  ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount,
-      this.paidAmount, this.balance, this.date, {this.accountName});
+ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount,
+this.paidAmount, this.balance, this.date, {this.accountName});
 }
 
 class AccountTotal {
-  final double credit;
-  final double debit;
+final double credit;
+final double debit;
 
-  AccountTotal(this.credit, this.debit);
+AccountTotal(this.credit, this.debit);
 }
 
 class MonthClosing {
-  final String monthYear; // e.g., "October 2023"
-  final double closingBalance;
-  final double monthCredit;
-  final double monthDebit;
+final String monthYear; // e.g., "October 2023"
+final double closingBalance;
+final String balanceType; // Added for Cr/Dr
+final double monthCredit;
+final double monthDebit;
 
-  MonthClosing(this.monthYear, this.closingBalance, this.monthCredit, this.monthDebit);
+MonthClosing(this.monthYear, this.closingBalance, this.balanceType,
+this.monthCredit, this.monthDebit);
 }
 
 class MonthClosingData {
-  final double credit;
-  final double debit;
-  final double closingBalance;
+final double credit;
+final double debit;
+final double closingBalance;
 
-  MonthClosingData(this.credit, this.debit, this.closingBalance);
+MonthClosingData(this.credit, this.debit, this.closingBalance);
 }
 
 class ProcessedData {
-  final List<ProcessedTransaction> transactions;
-  final double totalCredit;
-  final double totalDebit;
-  final double finalBalance;
-  final Map<String, AccountTotal> accountTotals;
-  final List<MonthClosing> monthClosings;
+final List<ProcessedTransaction> transactions;
+final double totalCredit;
+final double totalDebit;
+final double finalBalance;
+final String finalBalanceType; // Added for Cr/Dr
+final Map<String, AccountTotal> accountTotals;
+final List<MonthClosing> monthClosings;
 
-  ProcessedData(this.transactions, this.totalCredit, this.totalDebit,
-      this.finalBalance, this.accountTotals, this.monthClosings);
+ProcessedData(this.transactions, this.totalCredit, this.totalDebit,
+this.finalBalance, this.finalBalanceType, this.accountTotals,
+this.monthClosings);
 }
 
 class CustomerLedgerPage extends StatefulWidget {
-  final bool isDarkMode;
-  final VoidCallback toggleDarkMode;
+final bool isDarkMode;
+final VoidCallback toggleDarkMode;
 
-  const CustomerLedgerPage({
-    super.key,
-    required this.isDarkMode,
-    required this.toggleDarkMode,
-  });
+const CustomerLedgerPage({
+super.key,
+required this.isDarkMode,
+required this.toggleDarkMode,
+});
 
-  @override
-  _CustomerLedgerPageState createState() => _CustomerLedgerPageState();
+@override
+_CustomerLedgerPageState createState() => _CustomerLedgerPageState();
 }
 
 class _CustomerLedgerPageState extends State<CustomerLedgerPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final CollectionReference _customers =
-  FirebaseFirestore.instance.collection('customers');
-  final CollectionReference _invoices =
-  FirebaseFirestore.instance.collection('invoices');
-  final CollectionReference _cashRegisters =
-  FirebaseFirestore.instance.collection('cash_registers');
-  final CollectionReference _accounts =
-  FirebaseFirestore.instance.collection('accounts');
-
-  String? _selectedCustomerId;
-  Map<String, dynamic>? _selectedCustomerData;
-  List<Map<String, dynamic>> _customersList = [];
-  bool _isLoadingCustomers = false;
-  String? _errorMessage;
-  DateTime? _fromDate;
-  DateTime? _toDate;
-
-  // FocusNode for the page and dropdown
-  final FocusNode _pageFocusNode = FocusNode();
-  final FocusNode _dropdownFocusNode = FocusNode();
-
-  Color get _primaryColor => const Color(0xFF0D6EFD);
-  Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
-  Color get _secondaryTextColor =>
-      widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
-  Color get _backgroundColor =>
-      widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
-  Color get _surfaceColor =>
-      widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCustomers();
-    // Request focus on the page when it loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pageFocusNode.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _pageFocusNode.dispose();
-    _dropdownFocusNode.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadCustomers() async {
-    setState(() {
-      _isLoadingCustomers = true;
-      _errorMessage = null;
-      print('Starting to load customers from Firestore...');
-    });
-
-    try {
-      final snapshot = await _customers.get();
-      print('Customers snapshot received with ${snapshot.docs.length} documents');
-
-      setState(() {
-        _customersList = snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return {
-            'id': doc.id,
-            'name': data['name'] ?? 'Unnamed Customer',
-            'number': data['number'] ?? '',
-            'address': data['address'] ?? '',
-            'balanceAmount': (data['balanceAmount'] ?? 0.0).toDouble(),
-            'balanceType': data['balanceType'] ?? 'N/A',
-          };
-        }).toList();
-
-        // Sort the customers list alphabetically by name
-        _customersList.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
-
-        _isLoadingCustomers = false;
-        print('Customers loaded and sorted: ${_customersList.length}');
-      });
-    } catch (e) {
-      print('Error loading customers: $e');
-      setState(() {
-        _errorMessage = 'Error loading customers: $e';
-        _isLoadingCustomers = false;
-      });
-      _showSnackBar('Failed to load customers: $e', Colors.red);
-    }
-  }
-
-  Stream<List<DocumentSnapshot>> get _combinedTransactions {
-    if (_selectedCustomerId == null) {
-      print('No customer selected yet.');
-      return Stream.value([]);
-    }
-
-    print('Fetching transactions for customer ID: $_selectedCustomerId');
-    final invoiceStream = _invoices
-        .where('customer.id', isEqualTo: _selectedCustomerId)
-        .snapshots()
-        .map((snapshot) {
-      print('Invoices fetched: ${snapshot.docs.length}');
-      for (var doc in snapshot.docs) {
-        print('Invoice: ${doc.id}, Data: ${doc.data()}');
-      }
-      return snapshot.docs;
-    });
-
-    final cashStream = _cashRegisters
-        .where('entity_id', isEqualTo: _selectedCustomerId)
-        .where('entity_type', isEqualTo: 'Customer')
-        .snapshots()
-        .map((snapshot) {
-      print('Cash Registers fetched: ${snapshot.docs.length}');
-      for (var doc in snapshot.docs) {
-        print('Cash Register: ${doc.id}, Data: ${doc.data()}');
-      }
-      return snapshot.docs;
-    });
-
-    return Rx.combineLatest2(
-      invoiceStream,
-      cashStream,
-          (List<DocumentSnapshot> invoices, List<DocumentSnapshot> cash) {
-        final transactions = [...invoices, ...cash];
-        print('Combined transactions: ${transactions.length}');
-        return transactions;
-      },
-    ).onErrorReturnWith((error, stackTrace) {
-      print('Error in stream: $error');
-      return [];
-    });
-  }
-
-  Future<ProcessedData> _processTransactions(
-      List<DocumentSnapshot> transactions) async {
-    double totalCredit = 0.0;
-    double totalDebit = 0.0;
-    double currentBalance =
-    (_selectedCustomerData?['balanceAmount'] ?? 0.0).toDouble();
-    Map<String, AccountTotal> accountTotals = {};
-    List<ProcessedTransaction> processed = [];
-    Map<String, MonthClosingData> monthData = {};
-    List<MonthClosing> monthClosings = [];
-
-    print('Processing ${transactions.length} transactions...');
-    transactions.sort((a, b) {
-      DateTime? aDate = _getDate(a);
-      DateTime? bDate = _getDate(b);
-      if (aDate == null) return 1;
-      if (bDate == null) return -1;
-      return aDate.compareTo(bDate);
-    });
-
-    for (var doc in transactions) {
-      final isInvoice = doc.reference.parent.id == 'invoices';
-      final amount = (isInvoice ? doc['total'] : doc['amount'])?.toDouble() ?? 0.0;
-      final paid = (isInvoice ? doc['givenAmount'] : 0.0)?.toDouble() ?? 0.0;
-      final date = _getDate(doc);
-
-      if (date == null) {
-        print('Skipping transaction ${doc.id} due to invalid date: ${doc['date'] ?? doc['created_at']}');
-        continue;
-      }
-      if (_fromDate != null && date.isBefore(_fromDate!)) continue;
-      if (_toDate != null && date.isAfter(_toDate!)) continue;
-
-      String type;
-      String accountName = 'Unknown Account';
-      double credit = 0.0;
-      double debit = 0.0;
-
-      if (isInvoice) {
-        final transactionType = doc['type'] ?? 'Sale';
-        switch (transactionType) {
-          case 'Sale':
-          case 'Order Booking':
-            type = 'Debit';
-            debit = amount;
-            totalDebit += amount;
-            break;
-          case 'Return':
-            type = 'Credit';
-            credit = amount;
-            totalCredit += amount;
-            break;
-          default:
-            type = 'Debit';
-            debit = amount;
-            totalDebit += amount;
-        }
-        if (paid > 0) {
-          credit += paid;
-          totalCredit += paid;
-        }
-        accountName = 'Invoices - $transactionType';
-        currentBalance = currentBalance + debit - credit;
-        print('Processed Invoice ${doc.id}: Type: $type, Amount: $amount, Paid: $paid, Balance: $currentBalance');
-      } else {
-        final accountId = doc['account_id'];
-        if (accountId == null) {
-          print('Cash Register ${doc.id} has no account_id, skipping.');
-          continue;
-        }
-        final accountSnapshot = await _accounts.doc(accountId).get();
-        if (!accountSnapshot.exists) {
-          print('Account $accountId for Cash Register ${doc.id} not found.');
-          accountName = 'Unknown Account';
-          type = 'Debit';
-        } else {
-          final account = accountSnapshot.data() as Map<String, dynamic>;
-          accountName = account['name'] ?? 'Unknown Account';
-          type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
-        }
-
-        if (type == 'Credit') {
-          credit = amount;
-          totalCredit += amount;
-          currentBalance -= amount;
-        } else {
-          debit = amount;
-          totalDebit += amount;
-          currentBalance += amount;
-        }
-        print('Processed Cash Transaction ${doc.id}: Type: $type, Amount: $amount, Balance: $currentBalance');
-      }
-
-      final monthKey = DateFormat('MMMM yyyy').format(date);
-      monthData.update(
-        monthKey,
-            (value) => MonthClosingData(
-          value.credit + credit,
-          value.debit + debit,
-          currentBalance,
-        ),
-        ifAbsent: () => MonthClosingData(credit, debit, currentBalance),
-      );
-
-      accountTotals.update(
-        accountName,
-            (value) => AccountTotal(
-          value.credit + credit,
-          value.debit + debit,
-        ),
-        ifAbsent: () => AccountTotal(credit, debit),
-      );
-
-      processed.add(ProcessedTransaction(
-        doc,
-        type,
-        credit,
-        debit,
-        paid,
-        currentBalance,
-        date,
-        accountName: accountName,
-      ));
-    }
-
-    monthClosings = monthData.entries.map((entry) {
-      return MonthClosing(
-        entry.key,
-        entry.value.closingBalance,
-        entry.value.credit,
-        entry.value.debit,
-      );
-    }).toList();
-
-    monthClosings.sort((a, b) {
-      final aDate = DateFormat('MMMM yyyy').parse(a.monthYear);
-      final bDate = DateFormat('MMMM yyyy').parse(b.monthYear);
-      return aDate.compareTo(bDate);
-    });
-
-    print(
-        'Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit');
-    return ProcessedData(
-        processed, totalCredit, totalDebit, currentBalance, accountTotals, monthClosings);
-  }
-
-  DateTime? _getDate(DocumentSnapshot doc) {
-    try {
-      if (doc.reference.parent.id == 'invoices') {
-        final timestamp = doc['timestamp'];
-        if (timestamp is Timestamp) {
-          return timestamp.toDate();
-        } else if (timestamp is String) {
-          print('Parsing invoice timestamp string for ${doc.id}: $timestamp');
-          return DateFormat('dd-MM-yyyy').parse(timestamp);
-        }
-        print('Invalid invoice timestamp for ${doc.id}: $timestamp');
-        return null;
-      }
-      final dateField = doc['date'] ?? doc['created_at'];
-      if (dateField is Timestamp) {
-        return dateField.toDate();
-      } else if (dateField is String) {
-        print('Parsing cash register date string for ${doc.id}: $dateField');
-        return DateFormat('dd-MM-yyyy').parse(dateField);
-      }
-      print('Invalid cash register date for ${doc.id}: $dateField');
-      return null;
-    } catch (e) {
-      print('Error parsing date for ${doc.id}: $e');
-      return null;
-    }
-  }
-
-  Future<void> _selectDate(BuildContext context, bool isFromDate) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: widget.isDarkMode ? ThemeData.dark() : ThemeData.light(),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) {
-      setState(() {
-        if (isFromDate) _fromDate = picked;
-        else _toDate = picked;
-      });
-    }
-  }
-
-  void _showSummaryBottomSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: BoxDecoration(
-            color: _surfaceColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: StreamBuilder<List<DocumentSnapshot>>(
-            stream: _combinedTransactions,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return FutureBuilder<ProcessedData>(
-                future: _processTransactions(snapshot.data!),
-                builder: (context, asyncSnapshot) {
-                  if (!asyncSnapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final data = asyncSnapshot.data!;
-                  return SingleChildScrollView(
-                    child: _buildFooter(
-                      data.totalCredit,
-                      data.totalDebit,
-                      data.finalBalance,
-                      data.accountTotals,
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _printLedger() async {
-    print('Print button pressed');
-    if (_selectedCustomerId == null || _selectedCustomerData == null) {
-      print('No customer selected');
-      _showSnackBar('Please select a customer to print the ledger', Colors.red);
-      return;
-    }
-
-    try {
-      print('Fetching transactions...');
-      final transactions = await _combinedTransactions.first;
-      print('Transactions fetched: ${transactions.length}');
-      if (transactions.isEmpty) {
-        print('No transactions to print');
-        _showSnackBar('No transactions found for this customer', Colors.orange);
-        return;
-      }
-
-      print('Processing transactions...');
-      final processedData = await _processTransactions(transactions);
-      print('Transactions processed: ${processedData.transactions.length}');
-
-      print('Generating PDF...');
-      final pdf = pw.Document();
-      final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
-      final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
-
-      // Prepare display items (transactions and month closings)
-      List<dynamic> displayItems = [];
-      int transactionIndex = 0;
-      int monthClosingIndex = 0;
-
-      while (transactionIndex < processedData.transactions.length ||
-          monthClosingIndex < processedData.monthClosings.length) {
-        if (monthClosingIndex >= processedData.monthClosings.length) {
-          displayItems.add(processedData.transactions[transactionIndex]);
-          transactionIndex++;
-          continue;
-        }
-
-        if (transactionIndex >= processedData.transactions.length) {
-          displayItems.add(processedData.monthClosings[monthClosingIndex]);
-          monthClosingIndex++;
-          continue;
-        }
-
-        final transaction = processedData.transactions[transactionIndex];
-        final monthClosing = processedData.monthClosings[monthClosingIndex];
-        final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
-        final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
-
-        if (transactionMonth == monthClosing.monthYear) {
-          displayItems.add(transaction);
-          transactionIndex++;
-
-          if (transactionIndex == processedData.transactions.length ||
-              DateFormat('MMMM yyyy').format(processedData.transactions[transactionIndex].date) != monthClosing.monthYear) {
-            displayItems.add(monthClosing);
-            monthClosingIndex++;
-          }
-        } else {
-          final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
-          if (transactionDate.isAfter(monthClosingDate)) {
-            displayItems.add(monthClosing);
-            monthClosingIndex++;
-          } else {
-            displayItems.add(transaction);
-            transactionIndex++;
-          }
-        }
-      }
-
-      // Build the table rows for transactions and month closings
-      final List<pw.TableRow> tableRows = [
-        pw.TableRow(
-          decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
-          children: [
-            'Sr#',
-            'Date',
-            'Details',
-            'Debit',
-            'Credit',
-            'Balance',
-          ].map((text) => pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.center,
-            child: pw.Text(
-              text,
-              style: pw.TextStyle(
-                color: PdfColors.white, // Header text remains white for contrast
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          )).toList(),
-        ),
-        ...displayItems.asMap().entries.map((entry) {
-          final int index = entry.key + 1;
-          final item = entry.value;
-
-          if (item is ProcessedTransaction) {
-            final isInvoice = item.doc.reference.parent.id == 'invoices';
-            String details = isInvoice
-                ? '${item.doc['type']} - Invoice #${item.doc['invoiceNumber'] ?? 'N/A'}'
-                : item.accountName ?? 'Unknown Account';
-
-            return pw.TableRow(
-              children: [
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    index.toString(),
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    DateFormat('dd-MM-yyyy').format(item.date),
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    details,
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed from blue to black
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    item.debitAmount > 0 ? numberFormat.format(item.debitAmount) : '-',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed from red to black
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    item.creditAmount > 0 ? numberFormat.format(item.creditAmount) : '-',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed from green to black
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    numberFormat.format(item.balance),
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed from green/red to black
-                  ),
-                ),
-              ],
-            );
-          } else if (item is MonthClosing) {
-            return pw.TableRow(
-              decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
-              children: [
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    '',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white), // Month closing text remains white for contrast
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    'Total in ${item.monthYear}',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    '',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    item.monthDebit > 0 ? numberFormat.format(item.monthDebit) : '-',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    item.monthCredit > 0 ? numberFormat.format(item.monthCredit) : '-',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
-                  ),
-                ),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(3),
-                  alignment: pw.Alignment.center,
-                  child: pw.Text(
-                    '${numberFormat.format(item.closingBalance)} (${item.closingBalance >= 0 ? "Cr" : "Dr"})',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
-                  ),
-                ),
-              ],
-            );
-          }
-          return pw.TableRow(children: List.filled(6, pw.SizedBox()));
-        }),
-      ];
-
-      // Build the totals table rows
-      final List<pw.TableRow> totalsTableRows = [
-        pw.TableRow(children: [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'Total Debit:',
-              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-            ),
-          ),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              numberFormat.format(processedData.totalDebit),
-              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
-            ),
-          ),
-        ]),
-        pw.TableRow(children: [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'Total Credit:',
-              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-            ),
-          ),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              numberFormat.format(processedData.totalCredit),
-              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
-            ),
-          ),
-        ]),
-        pw.TableRow(children: [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'Final Balance:',
-              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
-            ),
-          ),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(3),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              numberFormat.format(processedData.finalBalance),
-              style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
-            ),
-          ),
-        ]),
-      ];
-
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(25),
-          header: (context) => context.pageNumber == 1
-              ? pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'CUSTOMER LEDGER',
-                        style: pw.TextStyle(
-                          fontSize: 22,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#0D6EFD'), // Title remains blue as per purchase order
-                        ),
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                        'Popular Foam Center',
-                        style: pw.TextStyle(
-                          fontSize: 15,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.Text(
-                        'Zanana Hospital Road, Bahawalpur (63100)',
-                        style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
-                      ),
-                    ],
-                  ),
-                  pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
-                ],
-              ),
-              pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Customer:',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.Text(
-                        _selectedCustomerData!['name'] ?? 'N/A',
-                        style: const pw.TextStyle(fontSize: 13, color: PdfColors.black),
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                        'Number:',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.Text(
-                        _selectedCustomerData!['number'] ?? 'N/A',
-                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                        'Opening Balance:',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.Text(
-                        numberFormat.format(_selectedCustomerData!['balanceAmount'] ?? 0.0),
-                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
-                      ),
-                    ],
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text(
-                        'Date Range:',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.Text(
-                        _fromDate != null && _toDate != null
-                            ? '${DateFormat('dd-MM-yyyy').format(_fromDate!)} to ${DateFormat('dd-MM-yyyy').format(_toDate!)}'
-                            : 'All Time',
-                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 20),
-            ],
-          )
-              : pw.SizedBox(),
-          build: (context) => [
-            pw.Table(
-              columnWidths: {
-                0: const pw.FlexColumnWidth(0.8),  // Sr#
-                1: const pw.FlexColumnWidth(1.5),  // Date
-                2: const pw.FlexColumnWidth(3.0),  // Details
-                3: const pw.FlexColumnWidth(1.5),  // Debit
-                4: const pw.FlexColumnWidth(1.5),  // Credit
-                5: const pw.FlexColumnWidth(1.5),  // Balance
-              },
-              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
-              defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
-              children: tableRows,
-            ),
-            pw.SizedBox(height: 20),
-            pw.Container(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Container(
-                width: 220,
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.black, width: 0.5),
-                  borderRadius: pw.BorderRadius.circular(5),
-                ),
-                child: pw.Table(
-                  columnWidths: {
-                    0: const pw.FlexColumnWidth(2),
-                    1: const pw.FlexColumnWidth(1),
-                  },
-                  border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
-                  defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
-                  children: totalsTableRows,
-                ),
-              ),
-            ),
-            pw.SizedBox(height: 12),
-            pw.Container(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Container(
-                width: 220,
-                padding: const pw.EdgeInsets.all(10),
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('#F8F9FA'),
-                  borderRadius: pw.BorderRadius.circular(5),
-                  border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
-                ),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      'TOTAL TRANSACTIONS',
-                      style: pw.TextStyle(
-                        fontSize: 12,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.black,
-                      ),
-                    ),
-                    pw.Text(
-                      processedData.transactions.length.toString(),
-                      style: pw.TextStyle(
-                        fontSize: 13,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('#0D6EFD'), // This remains blue as per purchase order
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          footer: (context) => context.pageNumber == context.pagesCount
-              ? pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.SizedBox(height: 20),
-              pw.Divider(thickness: 0.5, color: PdfColors.black),
-              pw.Text(
-                'Contact: 0302-9596046 | FB: Popular Foam Center',
-                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
-                textAlign: pw.TextAlign.center,
-              ),
-              pw.Text(
-                'Page ${context.pageNumber} of ${context.pagesCount}',
-                style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
-              ),
-              pw.SizedBox(height: 10),
-            ],
-          )
-              : pw.Text(
-            'Page ${context.pageNumber} of ${context.pagesCount}',
-            style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
-            textAlign: pw.TextAlign.center,
-          ),
-        ),
-      );
-
-      print('PDF generated, attempting to print...');
-      try {
-        final printed = await Printing.layoutPdf(
-          onLayout: (PdfPageFormat format) async => pdf.save(),
-          name: 'PFC-LEDGER-${_selectedCustomerId}-${DateTime.now().millisecondsSinceEpoch}-A4',
-        );
-        if (printed) {
-          print('Printing successful');
-          _showSnackBar('Ledger printed successfully', Colors.green);
-        } else {
-          print('Printing cancelled or failed, saving PDF as fallback...');
-          await _saveAndSharePdf(pdf);
-        }
-      } catch (e) {
-        print('Error during printing: $e');
-        _showSnackBar('Failed to print ledger: $e', Colors.red);
-        print('Saving PDF as fallback...');
-        await _saveAndSharePdf(pdf);
-      }
-    } catch (e) {
-      print('Error in _printLedger: $e');
-      _showSnackBar('Error generating ledger: $e', Colors.red);
-    }
-  }
-  Future<void> _saveAndSharePdf(pw.Document pdf) async {
-    try {
-      print('Saving PDF to temporary file...');
-      final bytes = await pdf.save();
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/customer_ledger.pdf');
-      await file.writeAsBytes(bytes);
-      print('PDF saved to ${file.path}');
-
-      print('Sharing PDF...');
-      await Share.shareXFiles([XFile(file.path)],
-          text: 'Customer Ledger PDF',
-          subject: 'Customer Ledger');
-      print('Share dialog opened');
-    } catch (e) {
-      print('Error saving/sharing PDF: $e');
-      _showSnackBar('Failed to save/share PDF: $e', Colors.red);
-    }
-  }
-
-  KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
-    if (event is RawKeyDownEvent) {
-      print('Key pressed: ${event.logicalKey.keyLabel}');
-      if (event.logicalKey == LogicalKeyboardKey.enter) {
-        _showSummaryBottomSheet(context);
-        return KeyEventResult.handled;
-      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-        setState(() {
-          _selectedCustomerId = null;
-          _selectedCustomerData = null;
-          _fromDate = null;
-          _toDate = null;
-        });
-        return KeyEventResult.handled;
-      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
-        _dropdownFocusNode.requestFocus();
-        return KeyEventResult.handled;
-      } else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyP) {
-        print('Ctrl + P pressed');
-        _printLedger();
-        return KeyEventResult.handled;
-      }
-    }
-    return KeyEventResult.ignored;
-  }
-
-  Widget _buildCustomerDropdown() {
-    if (_isLoadingCustomers) {
-      print('Customer dropdown is loading...');
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 8),
-            Text(
-              'Loading customers...',
-              style: TextStyle(color: _textColor, fontSize: 14),
-            ),
-          ],
-        ),
-      );
-    }
-    if (_errorMessage != null) {
-      print('Error in customer dropdown: $_errorMessage');
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.red, fontSize: 14),
-            ),
-            TextButton(
-              onPressed: _loadCustomers,
-              child: Text(
-                'Retry',
-                style: TextStyle(color: _primaryColor, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    if (_customersList.isEmpty) {
-      print('No customers found in the list');
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'No customers found',
-              style: TextStyle(color: _textColor, fontSize: 14),
-            ),
-            TextButton(
-              onPressed: _loadCustomers,
-              child: Text(
-                'Retry',
-                style: TextStyle(color: _primaryColor, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    print('Building customer dropdown with ${_customersList.length} customers');
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: DropdownSearch<String>(
-        popupProps: PopupProps.menu(
-          showSearchBox: true,
-          showSelectedItems: true,
-          searchFieldProps: TextFieldProps(
-            focusNode: _dropdownFocusNode,
-            autofocus: true,
-            decoration: InputDecoration(
-              hintText: 'Search customer...',
-              hintStyle: TextStyle(color: _secondaryTextColor),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: _primaryColor.withOpacity(0.3)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: _primaryColor),
-              ),
-            ),
-            style: TextStyle(color: _textColor),
-          ),
-          itemBuilder: (context, item, isSelected) => ListTile(
-            title: Text(
-              item,
-              style: TextStyle(
-                color: isSelected ? _primaryColor : _textColor,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-            selected: isSelected,
-            tileColor: isSelected ? _primaryColor.withOpacity(0.1) : _surfaceColor,
-          ),
-          menuProps: MenuProps(
-            backgroundColor: _surfaceColor,
-            elevation: 8,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          fit: FlexFit.loose,
-          constraints: const BoxConstraints(maxHeight: 300),
-        ),
-        dropdownDecoratorProps: DropDownDecoratorProps(
-          dropdownSearchDecoration: InputDecoration(
-            hintText: 'Select customer',
-            hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-          baseStyle: TextStyle(color: _textColor, fontSize: 14),
-        ),
-        dropdownBuilder: (context, selectedItem) {
-          return Text(
-            selectedItem ?? 'Select customer',
-            style: TextStyle(
-              color: selectedItem != null ? _textColor : _secondaryTextColor,
-              fontSize: 14,
-            ),
-            overflow: TextOverflow.ellipsis,
-          );
-        },
-        items: _customersList.map((customer) => customer['name'] as String).toList(),
-        selectedItem: _selectedCustomerData?['name'],
-        onChanged: (String? value) async {
-          if (value == null) return;
-          final customerData = _customersList.firstWhere((customer) => customer['name'] == value);
-          final customerDoc = await _customers.doc(customerData['id']).get();
-          print('Selected customer ID: ${customerData['id']}, Name: ${customerDoc['name']}');
-          setState(() {
-            _selectedCustomerId = customerData['id'];
-            _selectedCustomerData = {
-              'id': customerDoc.id,
-              'name': customerDoc['name'] ?? 'Unnamed Customer',
-              'number': customerDoc['number'] ?? '',
-              'address': customerDoc['address'] ?? '',
-              'balanceAmount': (customerDoc['balanceAmount'] ?? 0.0).toDouble(),
-              'balanceType': customerDoc['balanceType'] ?? 'N/A',
-            };
-            print('Customer data: $_selectedCustomerData');
-          });
-        },
-        filterFn: (item, filter) => item.toLowerCase().contains(filter.toLowerCase()),
-        dropdownButtonProps: DropdownButtonProps(
-          icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
-        ),
-        clearButtonProps: ClearButtonProps(
-          isVisible: true,
-          icon: Icon(Icons.clear, color: _primaryColor),
-          onPressed: () {
-            setState(() {
-              _selectedCustomerId = null;
-              _selectedCustomerData = null;
-            });
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDateFilterChip(String label, DateTime? date, bool isFromDate) {
-    return InputChip(
-      label: Text(
-        date != null ? DateFormat('dd-MM-yyyy').format(date) : label,
-        style: TextStyle(
-          color: date != null ? _primaryColor : _secondaryTextColor,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      backgroundColor: _surfaceColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: _primaryColor.withOpacity(0.3)),
-      ),
-      onPressed: () => _selectDate(context, isFromDate),
-    );
-  }
-
-  Widget _buildCustomerDetails() {
-    if (_selectedCustomerData == null || _selectedCustomerData!.isEmpty) {
-      return Center(
-        child: Text(
-          'Please select a customer',
-          style: TextStyle(color: _textColor),
-        ),
-      );
-    }
-
-    return Container(
-      margin: const EdgeInsets.all(8),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Customer Details',
-            style: GoogleFonts.roboto(
-              color: _primaryColor,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          _buildDetailRow('Name', _selectedCustomerData!['name'] ?? 'N/A'),
-          _buildDetailRow('Number', _selectedCustomerData!['number'] ?? 'N/A'),
-          _buildDetailRow(
-            'Opening Balance',
-            '${(_selectedCustomerData!['balanceAmount'] ?? 0.0).toStringAsFixed(2)}',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: _secondaryTextColor,
-                fontSize: 12,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                color: _textColor,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTableHeader() {
-    return Container(
-      height: 56,
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: BoxDecoration(
-        color: _primaryColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(child: _HeaderCell('Date')),
-            Expanded(child: _HeaderCell('Details')),
-            Expanded(child: _HeaderCell('Debit')),
-            Expanded(child: _HeaderCell('Credit')),
-            Expanded(child: _HeaderCell('Balance')),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTransactionRow(ProcessedTransaction pt) {
-    final isInvoice = pt.doc.reference.parent.id == 'invoices';
-
-    print('Rendering row for ${pt.doc.id}: Invoice? $isInvoice, Debit: ${pt.debitAmount}, Credit: ${pt.creditAmount}');
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(pt.date))),
-            Expanded(
-              child: isInvoice
-                  ? GestureDetector(
-                onTap: () => _navigateToViewInvoice(pt.doc),
-                child: _DataCell(
-                  '${pt.doc['type']} - Invoice #${pt.doc['invoiceNumber'] ?? 'N/A'}',
-                  color: _primaryColor,
-                ),
-              )
-                  : _DataCell(pt.accountName ?? 'Unknown Account'),
-            ),
-            Expanded(
-              child: _DataCell(
-                pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
-                color: pt.debitAmount > 0 ? Colors.red : _secondaryTextColor,
-              ),
-            ),
-            Expanded(
-              child: _DataCell(
-                pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
-                color: pt.creditAmount > 0 ? Colors.green : _secondaryTextColor,
-              ),
-            ),
-            Expanded(
-              child: _DataCell(
-                '${pt.balance.toStringAsFixed(0)}/-',
-                color: pt.balance >= 0 ? Colors.green : Colors.red,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMonthClosingRow(MonthClosing mc) {
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: _primaryColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(child: _DataCell('Total in')),
-            Expanded(child: _DataCell(mc.monthYear, color: Colors.white)),
-            Expanded(
-              child: _DataCell(
-                mc.monthDebit > 0 ? '${mc.monthDebit.toStringAsFixed(0)}/-' : '-',
-                color: Colors.white,
-              ),
-            ),
-            Expanded(
-              child: _DataCell(
-                mc.monthCredit > 0 ? '${mc.monthCredit.toStringAsFixed(0)}/-' : '-',
-                color: Colors.white,
-              ),
-            ),
-            Expanded(
-              child: _DataCell(
-                '${mc.closingBalance.toStringAsFixed(0)} (${mc.closingBalance >= 0 ? "Cr" : "Dr"})',
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _navigateToViewInvoice(DocumentSnapshot invoiceDoc) async {
-    try {
-      final invoiceId = invoiceDoc.id;
-      final invoiceSnapshot = await _invoices.doc(invoiceId).get();
-      if (!invoiceSnapshot.exists) {
-        _showSnackBar('Invoice not found', Colors.red);
-        return;
-      }
-
-      final invoiceData = invoiceSnapshot.data() as Map<String, dynamic>;
-      final invoice = Invoice.fromMap(
-        invoiceId,
-        invoiceData,
-      );
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PointOfSalePage(invoice: invoice, isReadOnly: true),
-        ),
-      );
-    } catch (e) {
-      print('Error navigating to view invoice: $e');
-      _showSnackBar('Failed to view invoice: $e', Colors.red);
-    }
-  }
-
-  Widget _buildFooter(double totalCredit, double totalDebit,
-      double finalBalance, Map<String, AccountTotal> accountTotals) {
-    return Container(
-      margin: const EdgeInsets.all(24),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          if (accountTotals.isNotEmpty) ...[
-            ...accountTotals.entries.map((entry) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      entry.key,
-                      style: TextStyle(
-                        color: _textColor,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      '${entry.value.debit.toStringAsFixed(0)}/-',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      '${entry.value.credit.toStringAsFixed(0)}/-',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )),
-            const Divider(),
-          ],
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildFooterColumn('Total Debit', totalDebit, Colors.red),
-              _buildFooterColumn('Total Credit', totalCredit, Colors.green),
-              _buildFooterColumn('Final Balance', finalBalance,
-                  finalBalance >= 0 ? Colors.green : Colors.red),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFooterColumn(String label, double value, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
-        const SizedBox(height: 4),
-        Text(
-          '${value.toStringAsFixed(0)}/-',
-          style: TextStyle(
-              color: color, fontWeight: FontWeight.bold, fontSize: 14),
-        ),
-      ],
-    );
-  }
-
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _pageFocusNode,
-      onKey: _handleKeyEvent,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Row(
-            children: [
-              Text('Customer Ledger', style: TextStyle(color: _textColor)),
-              const SizedBox(width: 16),
-              Expanded(child: _buildCustomerDropdown()),
-              const SizedBox(width: 16),
-              _buildDateFilterChip('From', _fromDate, true),
-              const SizedBox(width: 16),
-              _buildDateFilterChip('To', _toDate, false),
-            ],
-          ),
-          backgroundColor: _backgroundColor,
-          elevation: 0,
-          iconTheme: IconThemeData(color: _textColor),
-          actions: [
-            IconButton(
-              icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-              color: _textColor,
-              onPressed: widget.toggleDarkMode,
-            ),
-          ],
-        ),
-        backgroundColor: _backgroundColor,
-        floatingActionButton: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FloatingActionButton(
-              onPressed: () {
-                print('Summary button pressed');
-                _showSummaryBottomSheet(context);
-              },
-              backgroundColor: _primaryColor,
-              heroTag: 'summary',
-              child: const Icon(Icons.info_outline, color: Colors.white),
-            ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
-              onPressed: () {
-                print('Print button pressed in FloatingActionButton');
-                _printLedger();
-              },
-              backgroundColor: _primaryColor,
-              heroTag: 'print',
-              child: const Icon(Icons.print, color: Colors.white),
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            if (_selectedCustomerId != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: _buildCustomerDetails(),
-              ),
-              Expanded(
-                child: StreamBuilder<List<DocumentSnapshot>>(
-                  stream: _combinedTransactions,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator(color: _primaryColor));
-                    }
-
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return Center(
-                        child: Text('No transactions found',
-                            style: TextStyle(color: _textColor)),
-                      );
-                    }
-
-                    return FutureBuilder<ProcessedData>(
-                      future: _processTransactions(snapshot.data!),
-                      builder: (context, asyncSnapshot) {
-                        if (asyncSnapshot.connectionState == ConnectionState.waiting) {
-                          return Center(child: CircularProgressIndicator(color: _primaryColor));
-                        }
-
-                        if (asyncSnapshot.hasError) {
-                          print('Error in FutureBuilder: ${asyncSnapshot.error}');
-                          return Center(
-                            child: Text('Error loading transactions',
-                                style: TextStyle(color: _textColor)),
-                          );
-                        }
-
-                        final data = asyncSnapshot.data!;
-                        List<dynamic> displayItems = [];
-                        int transactionIndex = 0;
-                        int monthClosingIndex = 0;
-
-                        while (transactionIndex < data.transactions.length ||
-                            monthClosingIndex < data.monthClosings.length) {
-                          if (monthClosingIndex >= data.monthClosings.length) {
-                            displayItems.add(data.transactions[transactionIndex]);
-                            transactionIndex++;
-                            continue;
-                          }
-
-                          if (transactionIndex >= data.transactions.length) {
-                            displayItems.add(data.monthClosings[monthClosingIndex]);
-                            monthClosingIndex++;
-                            continue;
-                          }
-
-                          final transaction = data.transactions[transactionIndex];
-                          final monthClosing = data.monthClosings[monthClosingIndex];
-                          final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
-                          final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
-
-                          if (transactionMonth == monthClosing.monthYear) {
-                            displayItems.add(transaction);
-                            transactionIndex++;
-
-                            if (transactionIndex == data.transactions.length ||
-                                DateFormat('MMMM yyyy').format(data.transactions[transactionIndex].date) != monthClosing.monthYear) {
-                              displayItems.add(monthClosing);
-                              monthClosingIndex++;
-                            }
-                          } else {
-                            final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
-                            if (transactionDate.isAfter(monthClosingDate)) {
-                              displayItems.add(monthClosing);
-                              monthClosingIndex++;
-                            } else {
-                              displayItems.add(transaction);
-                              transactionIndex++;
-                            }
-                          }
-                        }
-
-                        return Column(
-                          children: [
-                            _buildTableHeader(),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: ListView.separated(
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                itemCount: displayItems.length,
-                                separatorBuilder: (context, index) => const SizedBox(height: 8),
-                                itemBuilder: (context, index) {
-                                  final item = displayItems[index];
-                                  if (item is ProcessedTransaction) {
-                                    return _buildTransactionRow(item);
-                                  } else if (item is MonthClosing) {
-                                    return _buildMonthClosingRow(item);
-                                  }
-                                  return const SizedBox.shrink();
-                                },
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+final CollectionReference _customers =
+FirebaseFirestore.instance.collection('customers');
+final CollectionReference _invoices =
+FirebaseFirestore.instance.collection('invoices');
+final CollectionReference _cashRegisters =
+FirebaseFirestore.instance.collection('cash_registers');
+final CollectionReference _accounts =
+FirebaseFirestore.instance.collection('accounts');
+
+String? _selectedCustomerId;
+Map<String, dynamic>? _selectedCustomerData;
+List<Map<String, dynamic>> _customersList = [];
+bool _isLoadingCustomers = false;
+String? _errorMessage;
+DateTime? _fromDate;
+DateTime? _toDate;
+
+// FocusNode for the page and dropdown
+final FocusNode _pageFocusNode = FocusNode();
+final FocusNode _dropdownFocusNode = FocusNode();
+
+Color get _primaryColor => const Color(0xFF0D6EFD);
+Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
+Color get _secondaryTextColor =>
+widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
+Color get _backgroundColor =>
+widget.isDarkMode ? const Color(0xFF1A1A2F) : const Color(0xFFF8F9FA);
+Color get _surfaceColor =>
+widget.isDarkMode ? const Color(0xFF252541) : Colors.white;
+
+@override
+void initState() {
+super.initState();
+_loadCustomers();
+// Request focus on the page when it loads
+WidgetsBinding.instance.addPostFrameCallback((_) {
+_pageFocusNode.requestFocus();
+});
+}
+
+@override
+void dispose() {
+_pageFocusNode.dispose();
+_dropdownFocusNode.dispose();
+super.dispose();
+}
+
+Future<void> _loadCustomers() async {
+setState(() {
+_isLoadingCustomers = true;
+_errorMessage = null;
+print('Starting to load customers from Firestore...');
+});
+
+try {
+final snapshot = await _customers.get();
+print('Customers snapshot received with ${snapshot.docs.length} documents');
+
+setState(() {
+_customersList = snapshot.docs.map((doc) {
+final data = doc.data() as Map<String, dynamic>;
+return {
+'id': doc.id,
+'name': data['name'] ?? 'Unnamed Customer',
+'number': data['number'] ?? '',
+'address': data['address'] ?? '',
+'balanceAmount': (data['balanceAmount'] ?? 0.0).toDouble(),
+'balanceType': data['balanceType'] ?? 'N/A',
+};
+}).toList();
+
+// Sort the customers list alphabetically by name
+_customersList.sort((a, b) => (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
+
+_isLoadingCustomers = false;
+print('Customers loaded and sorted: ${_customersList.length}');
+});
+} catch (e) {
+print('Error loading customers: $e');
+setState(() {
+_errorMessage = 'Error loading customers: $e';
+_isLoadingCustomers = false;
+});
+_showSnackBar('Failed to load customers: $e', Colors.red);
+}
+}
+
+Stream<List<DocumentSnapshot>> get _combinedTransactions {
+if (_selectedCustomerId == null) {
+print('No customer selected yet.');
+return Stream.value([]);
+}
+
+print('Fetching transactions for customer ID: $_selectedCustomerId');
+final invoiceStream = _invoices
+    .where('customer.id', isEqualTo: _selectedCustomerId)
+    .snapshots()
+    .map((snapshot) {
+print('Invoices fetched: ${snapshot.docs.length}');
+for (var doc in snapshot.docs) {
+print('Invoice: ${doc.id}, Data: ${doc.data()}');
+}
+return snapshot.docs;
+});
+
+final cashStream = _cashRegisters
+    .where('entity_id', isEqualTo: _selectedCustomerId)
+    .where('entity_type', isEqualTo: 'Customer')
+    .snapshots()
+    .map((snapshot) {
+print('Cash Registers fetched: ${snapshot.docs.length}');
+for (var doc in snapshot.docs) {
+print('Cash Register: ${doc.id}, Data: ${doc.data()}');
+}
+return snapshot.docs;
+});
+
+return Rx.combineLatest2(
+invoiceStream,
+cashStream,
+(List<DocumentSnapshot> invoices, List<DocumentSnapshot> cash) {
+final transactions = [...invoices, ...cash];
+print('Combined transactions: ${transactions.length}');
+return transactions;
+},
+).onErrorReturnWith((error, stackTrace) {
+print('Error in stream: $error');
+return [];
+});
+}
+
+Future<ProcessedData> _processTransactions(
+List<DocumentSnapshot> transactions) async {
+double totalCredit = 0.0;
+double totalDebit = 0.0;
+double currentBalance =
+(_selectedCustomerData?['balanceAmount'] ?? 0.0).toDouble();
+Map<String, AccountTotal> accountTotals = {};
+List<ProcessedTransaction> processed = [];
+Map<String, MonthClosingData> monthData = {};
+List<MonthClosing> monthClosings = [];
+
+print('Processing ${transactions.length} transactions...');
+transactions.sort((a, b) {
+DateTime? aDate = _getDate(a);
+DateTime? bDate = _getDate(b);
+if (aDate == null) return 1;
+if (bDate == null) return -1;
+return aDate.compareTo(bDate);
+});
+
+for (var doc in transactions) {
+final isInvoice = doc.reference.parent.id == 'invoices';
+final amount = (isInvoice ? doc['total'] : doc['amount'])?.toDouble() ?? 0.0;
+final paid = (isInvoice ? doc['givenAmount'] : 0.0)?.toDouble() ?? 0.0;
+final date = _getDate(doc);
+
+if (date == null) {
+print('Skipping transaction ${doc.id} due to invalid date: ${doc['date'] ?? doc['created_at']}');
+continue;
+}
+if (_fromDate != null && date.isBefore(_fromDate!)) continue;
+if (_toDate != null && date.isAfter(_toDate!)) continue;
+
+String type;
+String accountName = 'Unknown Account';
+double credit = 0.0;
+double debit = 0.0;
+
+if (isInvoice) {
+final transactionType = doc['type'] ?? 'Sale';
+switch (transactionType) {
+case 'Sale':
+case 'Order Booking':
+type = 'Debit';
+debit = amount;
+totalDebit += amount;
+break;
+case 'Return':
+type = 'Credit';
+credit = amount;
+totalCredit += amount;
+break;
+default:
+type = 'Debit';
+debit = amount;
+totalDebit += amount;
+}
+if (paid > 0) {
+credit += paid;
+totalCredit += paid;
+}
+accountName = 'Invoices - $transactionType';
+currentBalance = currentBalance + debit - credit;
+print('Processed Invoice ${doc.id}: Type: $type, Amount: $amount, Paid: $paid, Balance: $currentBalance');
+} else {
+final accountId = doc['account_id'];
+if (accountId == null) {
+print('Cash Register ${doc.id} has no account_id, skipping.');
+continue;
+}
+final accountSnapshot = await _accounts.doc(accountId).get();
+if (!accountSnapshot.exists) {
+print('Account $accountId for Cash Register ${doc.id} not found.');
+accountName = 'Unknown Account';
+type = 'Debit';
+} else {
+final account = accountSnapshot.data() as Map<String, dynamic>;
+accountName = account['name'] ?? 'Unknown Account';
+type = account['type'] == 'Credit' ? 'Credit' : 'Debit';
+}
+
+if (type == 'Credit') {
+credit = amount;
+totalCredit += amount;
+currentBalance -= amount;
+} else {
+debit = amount;
+totalDebit += amount;
+currentBalance += amount;
+}
+print('Processed Cash Transaction ${doc.id}: Type: $type, Amount: $amount, Balance: $currentBalance');
+}
+
+final monthKey = DateFormat('MMMM yyyy').format(date);
+monthData.update(
+monthKey,
+(value) => MonthClosingData(
+value.credit + credit,
+value.debit + debit,
+currentBalance,
+),
+ifAbsent: () => MonthClosingData(credit, debit, currentBalance),
+);
+
+accountTotals.update(
+accountName,
+(value) => AccountTotal(
+value.credit + credit,
+value.debit + debit,
+),
+ifAbsent: () => AccountTotal(credit, debit),
+);
+
+processed.add(ProcessedTransaction(
+doc,
+type,
+credit,
+debit,
+paid,
+currentBalance,
+date,
+accountName: accountName,
+));
+}
+
+monthClosings = monthData.entries.map((entry) {
+final balanceType = entry.value.closingBalance >= 0 ? 'Dr' : 'Cr'; // Reversed
+return MonthClosing(
+entry.key,
+entry.value.closingBalance,
+balanceType,
+entry.value.credit,
+entry.value.debit,
+);
+}).toList();
+
+monthClosings.sort((a, b) {
+final aDate = DateFormat('MMMM yyyy').parse(a.monthYear);
+final bDate = DateFormat('MMMM yyyy').parse(b.monthYear);
+return aDate.compareTo(bDate);
+});
+
+final finalBalanceType = currentBalance >= 0 ? 'Dr' : 'Cr'; // Reversed
+
+print(
+'Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit');
+return ProcessedData(
+processed, totalCredit, totalDebit, currentBalance, finalBalanceType,
+accountTotals, monthClosings);
+}
+
+DateTime? _getDate(DocumentSnapshot doc) {
+try {
+if (doc.reference.parent.id == 'invoices') {
+final timestamp = doc['timestamp'];
+if (timestamp is Timestamp) {
+return timestamp.toDate();
+} else if (timestamp is String) {
+print('Parsing invoice timestamp string for ${doc.id}: $timestamp');
+return DateFormat('dd-MM-yyyy').parse(timestamp);
+}
+print('Invalid invoice timestamp for ${doc.id}: $timestamp');
+return null;
+}
+final dateField = doc['date'] ?? doc['created_at'];
+if (dateField is Timestamp) {
+return dateField.toDate();
+} else if (dateField is String) {
+print('Parsing cash register date string for ${doc.id}: $dateField');
+return DateFormat('dd-MM-yyyy').parse(dateField);
+}
+print('Invalid cash register date for ${doc.id}: $dateField');
+return null;
+} catch (e) {
+print('Error parsing date for doc ${doc.id}: $e');
+return null;
+}
+}
+
+Future<void> _selectDate(BuildContext context, bool isFromDate) async {
+final DateTime? picked = await showDatePicker(
+context: context,
+initialDate: DateTime.now(),
+firstDate: DateTime(2000),
+lastDate: DateTime.now(),
+builder: (context, child) {
+return Theme(
+data: widget.isDarkMode ? ThemeData.dark() : ThemeData.light(),
+child: child!,
+);
+},
+);
+if (picked != null) {
+setState(() {
+if (isFromDate) _fromDate = picked;
+else _toDate = picked;
+});
+}
+}
+
+void _showSummaryBottomSheet(BuildContext context) {
+showModalBottomSheet(
+context: context,
+backgroundColor: Colors.transparent,
+builder: (context) {
+return Container(
+decoration: BoxDecoration(
+color: _surfaceColor,
+borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+),
+child: StreamBuilder<List<DocumentSnapshot>>(
+stream: _combinedTransactions,
+builder: (context, snapshot) {
+if (!snapshot.hasData) {
+return const Center(child: CircularProgressIndicator());
+}
+return FutureBuilder<ProcessedData>(
+future: _processTransactions(snapshot.data!),
+builder: (context, asyncSnapshot) {
+if (!asyncSnapshot.hasData) {
+return const Center(child: CircularProgressIndicator());
+}
+final data = asyncSnapshot.data!;
+return SingleChildScrollView(
+child: _buildFooter(
+data.totalCredit,
+data.totalDebit,
+data.finalBalance,
+data.accountTotals,
+),
+);
+},
+);
+},
+),
+);
+},
+);
+}
+
+Future<void> _printLedger() async {
+print('Print button pressed');
+if (_selectedCustomerId == null || _selectedCustomerData == null) {
+print('No customer selected');
+_showSnackBar('Please select a customer to print the ledger', Colors.red);
+return;
+}
+
+try {
+print('Fetching transactions...');
+final transactions = await _combinedTransactions.first;
+print('Transactions fetched: ${transactions.length}');
+if (transactions.isEmpty) {
+print('No transactions to print');
+_showSnackBar('No transactions found for this customer', Colors.orange);
+return;
+}
+
+print('Processing transactions...');
+final processedData = await _processTransactions(transactions);
+print('Transactions processed: ${processedData.transactions.length}');
+
+print('Generating PDF...');
+final pdf = pw.Document();
+final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
+final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
+
+// Prepare display items (transactions and month closings)
+List<dynamic> displayItems = [];
+int transactionIndex = 0;
+int monthClosingIndex = 0;
+
+while (transactionIndex < processedData.transactions.length ||
+monthClosingIndex < processedData.monthClosings.length) {
+if (monthClosingIndex >= processedData.monthClosings.length) {
+displayItems.add(processedData.transactions[transactionIndex]);
+transactionIndex++;
+continue;
+}
+
+if (transactionIndex >= processedData.transactions.length) {
+displayItems.add(processedData.monthClosings[monthClosingIndex]);
+monthClosingIndex++;
+continue;
+}
+
+final transaction = processedData.transactions[transactionIndex];
+final monthClosing = processedData.monthClosings[monthClosingIndex];
+final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+if (transactionMonth == monthClosing.monthYear) {
+displayItems.add(transaction);
+transactionIndex++;
+
+if (transactionIndex == processedData.transactions.length ||
+DateFormat('MMMM yyyy').format(processedData.transactions[transactionIndex].date) != monthClosing.monthYear) {
+displayItems.add(monthClosing);
+monthClosingIndex++;
+}
+} else {
+final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+if (transactionDate.isAfter(monthClosingDate)) {
+displayItems.add(monthClosing);
+monthClosingIndex++;
+} else {
+displayItems.add(transaction);
+transactionIndex++;
+}
+}
+}
+
+// Build the table rows for transactions and month closings
+final List<pw.TableRow> tableRows = [
+pw.TableRow(
+decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+children: [
+'Sr#',
+'Date',
+'Details',
+'Debit',
+'Credit',
+'Balance',
+].map((text) => pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+text,
+style: pw.TextStyle(
+color: PdfColors.white,
+fontSize: 10,
+fontWeight: pw.FontWeight.bold,
+),
+),
+)).toList(),
+),
+...displayItems.asMap().entries.map((entry) {
+final int index = entry.key + 1;
+final item = entry.value;
+
+if (item is ProcessedTransaction) {
+final isInvoice = item.doc.reference.parent.id == 'invoices';
+String details = isInvoice
+? '${item.doc['type']} - Invoice #${item.doc['invoiceNumber'] ?? 'N/A'}'
+    : item.accountName ?? 'Unknown Account';
+
+return pw.TableRow(
+children: [
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+index.toString(),
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+DateFormat('dd-MM-yyyy').format(item.date),
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+details,
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+item.debitAmount > 0 ? numberFormat.format(item.debitAmount) : '-',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+item.creditAmount > 0 ? numberFormat.format(item.creditAmount) : '-',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+numberFormat.format(item.balance),
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+],
+);
+} else if (item is MonthClosing) {
+return pw.TableRow(
+decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
+children: [
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+'',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+'Total in ${item.monthYear}',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+'',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+item.monthDebit > 0 ? numberFormat.format(item.monthDebit) : '-',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+item.monthCredit > 0 ? numberFormat.format(item.monthCredit) : '-',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.center,
+child: pw.Text(
+'${numberFormat.format(item.closingBalance)} (${item.balanceType})',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
+),
+),
+],
+);
+}
+return pw.TableRow(children: List.filled(6, pw.SizedBox()));
+}),
+];
+
+// Build the totals table rows
+final List<pw.TableRow> totalsTableRows = [
+pw.TableRow(children: [
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.centerRight,
+child: pw.Text(
+'Total Debit:',
+style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.centerRight,
+child: pw.Text(
+numberFormat.format(processedData.totalDebit),
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+]),
+pw.TableRow(children: [
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.centerRight,
+child: pw.Text(
+'Total Credit:',
+style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.centerRight,
+child: pw.Text(
+numberFormat.format(processedData.totalCredit),
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+]),
+pw.TableRow(children: [
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.centerRight,
+child: pw.Text(
+'Final Balance:',
+style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+),
+),
+pw.Container(
+padding: const pw.EdgeInsets.all(3),
+alignment: pw.Alignment.centerRight,
+child: pw.Text(
+'${numberFormat.format(processedData.finalBalance)} (${processedData.finalBalanceType})',
+style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+),
+]),
+];
+
+pdf.addPage(
+pw.MultiPage(
+pageFormat: PdfPageFormat.a4,
+margin: const pw.EdgeInsets.all(25),
+header: (context) => context.pageNumber == 1
+? pw.Column(
+crossAxisAlignment: pw.CrossAxisAlignment.start,
+children: [
+pw.Row(
+mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+children: [
+pw.Column(
+crossAxisAlignment: pw.CrossAxisAlignment.start,
+children: [
+pw.Text(
+'CUSTOMER LEDGER',
+style: pw.TextStyle(
+fontSize: 22,
+fontWeight: pw.FontWeight.bold,
+color: PdfColor.fromHex('#0D6EFD'),
+),
+),
+pw.SizedBox(height: 6),
+pw.Text(
+'Popular Foam Center',
+style: pw.TextStyle(
+fontSize: 15,
+fontWeight: pw.FontWeight.bold,
+color: PdfColors.black,
+),
+),
+pw.Text(
+'Zanana Hospital Road, Bahawalpur (63100)',
+style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+],
+),
+pw.Image(pw.MemoryImage(logoImage), width: 110, height: 110),
+],
+),
+pw.Divider(color: PdfColor.fromHex('#0D6EFD'), height: 25),
+pw.Row(
+mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+children: [
+pw.Column(
+crossAxisAlignment: pw.CrossAxisAlignment.start,
+children: [
+pw.Text(
+'Customer:',
+style: pw.TextStyle(
+fontWeight: pw.FontWeight.bold,
+fontSize: 12,
+color: PdfColors.black,
+),
+),
+pw.Text(
+_selectedCustomerData!['name'] ?? 'N/A',
+style: const pw.TextStyle(fontSize: 13, color: PdfColors.black),
+),
+pw.SizedBox(height: 6),
+pw.Text(
+'Number:',
+style: pw.TextStyle(
+fontWeight: pw.FontWeight.bold,
+fontSize: 12,
+color: PdfColors.black,
+),
+),
+pw.Text(
+_selectedCustomerData!['number'] ?? 'N/A',
+style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+),
+pw.SizedBox(height: 6),
+pw.Text(
+'Opening Balance:',
+style: pw.TextStyle(
+fontWeight: pw.FontWeight.bold,
+fontSize: 12,
+color: PdfColors.black,
+),
+),
+pw.Text(
+'${numberFormat.format(_selectedCustomerData!['balanceAmount'] ?? 0.0)} (${(_selectedCustomerData!['balanceAmount'] ?? 0.0) >= 0 ? "Dr" : "Cr"})', // Reversed
+style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+),
+],
+),
+pw.Column(
+crossAxisAlignment: pw.CrossAxisAlignment.end,
+children: [
+pw.Text(
+'Date Range:',
+style: pw.TextStyle(
+fontWeight: pw.FontWeight.bold,
+fontSize: 12,
+color: PdfColors.black,
+),
+),
+pw.Text(
+_fromDate != null && _toDate != null
+? '${DateFormat('dd-MM-yyyy').format(_fromDate!)} to ${DateFormat('dd-MM-yyyy').format(_toDate!)}'
+    : 'All Time',
+style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
+),
+],
+),
+],
+),
+pw.SizedBox(height: 20),
+],
+)
+    : pw.SizedBox(),
+build: (context) => [
+pw.Table(
+columnWidths: {
+0: const pw.FlexColumnWidth(0.8),  // Sr#
+1: const pw.FlexColumnWidth(1.5),  // Date
+2: const pw.FlexColumnWidth(3.0),  // Details
+3: const pw.FlexColumnWidth(1.5),  // Debit
+4: const pw.FlexColumnWidth(1.5),  // Credit
+5: const pw.FlexColumnWidth(1.5),  // Balance
+},
+border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+children: tableRows,
+),
+pw.SizedBox(height: 20),
+pw.Container(
+alignment: pw.Alignment.centerRight,
+child: pw.Container(
+width: 220,
+decoration: pw.BoxDecoration(
+border: pw.Border.all(color: PdfColors.black, width: 0.5),
+borderRadius: pw.BorderRadius.circular(5),
+),
+child: pw.Table(
+columnWidths: {
+0: const pw.FlexColumnWidth(2),
+1: const pw.FlexColumnWidth(1),
+},
+border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+children: totalsTableRows,
+),
+),
+),
+pw.SizedBox(height: 12),
+pw.Container(
+alignment: pw.Alignment.centerRight,
+child: pw.Container(
+width: 220,
+padding: const pw.EdgeInsets.all(10),
+decoration: pw.BoxDecoration(
+color: PdfColor.fromHex('#F8F9FA'),
+borderRadius: pw.BorderRadius.circular(5),
+border: pw.Border.all(color: PdfColor.fromHex('#0D6EFD'), width: 1),
+),
+child: pw.Row(
+mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+children: [
+pw.Text(
+'TOTAL TRANSACTIONS',
+style: pw.TextStyle(
+fontSize: 12,
+fontWeight: pw.FontWeight.bold,
+color: PdfColors.black,
+),
+),
+pw.Text(
+processedData.transactions.length.toString(),
+style: pw.TextStyle(
+fontSize: 13,
+fontWeight: pw.FontWeight.bold,
+color: PdfColor.fromHex('#0D6EFD'),
+),
+),
+],
+),
+),
+),
+],
+footer: (context) => context.pageNumber == context.pagesCount
+? pw.Column(
+crossAxisAlignment: pw.CrossAxisAlignment.center,
+children: [
+pw.SizedBox(height: 20),
+pw.Divider(thickness: 0.5, color: PdfColors.black),
+pw.Text(
+'Contact: 0302-9596046 | FB: Popular Foam Center',
+style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+textAlign: pw.TextAlign.center,
+),
+pw.Text(
+'Page ${context.pageNumber} of ${context.pagesCount}',
+style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+),
+pw.SizedBox(height: 10),
+],
+)
+    : pw.Text(
+'Page ${context.pageNumber} of ${context.pagesCount}',
+style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
+textAlign: pw.TextAlign.center,
+),
+),
+);
+
+print('PDF generated, attempting to print...');
+try {
+final printed = await Printing.layoutPdf(
+onLayout: (PdfPageFormat format) async => pdf.save(),
+name: 'PFC-LEDGER-${_selectedCustomerId}-${DateTime.now().millisecondsSinceEpoch}-A4',
+);
+if (printed) {
+print('Printing successful');
+_showSnackBar('Ledger printed successfully', Colors.green);
+} else {
+print('Printing cancelled or failed, saving PDF as fallback...');
+await _saveAndSharePdf(pdf);
+}
+} catch (e) {
+print('Error during printing: $e');
+_showSnackBar('Failed to print ledger: $e', Colors.red);
+print('Saving PDF as fallback...');
+await _saveAndSharePdf(pdf);
+}
+} catch (e) {
+print('Error in _printLedger: $e');
+_showSnackBar('Error generating ledger: $e', Colors.red);
+}
+}
+
+Future<void> _saveAndSharePdf(pw.Document pdf) async {
+try {
+print('Saving PDF to temporary file...');
+final bytes = await pdf.save();
+final dir = await getTemporaryDirectory();
+final file = File('${dir.path}/customer_ledger.pdf');
+await file.writeAsBytes(bytes);
+print('PDF saved to ${file.path}');
+
+print('Sharing PDF...');
+await Share.shareXFiles([XFile(file.path)],
+text: 'Customer Ledger PDF',
+subject: 'Customer Ledger');
+print('Share dialog opened');
+} catch (e) {
+print('Error saving/sharing PDF: $e');
+_showSnackBar('Failed to save/share PDF: $e', Colors.red);
+}
+}
+
+KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
+if (event is RawKeyDownEvent) {
+print('Key pressed: ${event.logicalKey.keyLabel}');
+if (event.logicalKey == LogicalKeyboardKey.enter) {
+_showSummaryBottomSheet(context);
+return KeyEventResult.handled;
+} else if (event.logicalKey == LogicalKeyboardKey.escape) {
+setState(() {
+_selectedCustomerId = null;
+_selectedCustomerData = null;
+_fromDate = null;
+_toDate = null;
+});
+return KeyEventResult.handled;
+} else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyF) {
+_dropdownFocusNode.requestFocus();
+return KeyEventResult.handled;
+} else if (event.isControlPressed && event.logicalKey == LogicalKeyboardKey.keyP) {
+print('Ctrl + P pressed');
+_printLedger();
+return KeyEventResult.handled;
+}
+}
+return KeyEventResult.ignored;
+}
+
+Widget _buildCustomerDropdown() {
+if (_isLoadingCustomers) {
+print('Customer dropdown is loading...');
+return Center(
+child: Column(
+mainAxisAlignment: MainAxisAlignment.center,
+children: [
+const CircularProgressIndicator(),
+const SizedBox(height: 8),
+Text(
+'Loading customers...',
+style: TextStyle(color: _textColor, fontSize: 14),
+),
+],
+),
+);
+}
+if (_errorMessage != null) {
+print('Error in customer dropdown: $_errorMessage');
+return Center(
+child: Column(
+mainAxisAlignment: MainAxisAlignment.center,
+children: [
+Text(
+_errorMessage!,
+style: const TextStyle(color: Colors.red, fontSize: 14),
+),
+TextButton(
+onPressed: _loadCustomers,
+child: Text(
+'Retry',
+style: TextStyle(color: _primaryColor, fontSize: 14),
+),
+),
+],
+),
+);
+}
+if (_customersList.isEmpty) {
+print('No customers found in the list');
+return Center(
+child: Column(
+mainAxisAlignment: MainAxisAlignment.center,
+children: [
+Text(
+'No customers found',
+style: TextStyle(color: _textColor, fontSize: 14),
+),
+TextButton(
+onPressed: _loadCustomers,
+child: Text(
+'Retry',
+style: TextStyle(color: _primaryColor, fontSize: 14),
+),
+),
+],
+),
+);
+}
+
+print('Building customer dropdown with ${_customersList.length} customers');
+return Container(
+height: 56,
+decoration: BoxDecoration(
+color: _surfaceColor,
+borderRadius: BorderRadius.circular(12),
+boxShadow: [
+BoxShadow(
+color: Colors.black.withOpacity(0.05),
+blurRadius: 8,
+offset: const Offset(0, 4),
+),
+],
+),
+padding: const EdgeInsets.symmetric(horizontal: 12),
+child: DropdownSearch<String>(
+popupProps: PopupProps.menu(
+showSearchBox: true,
+showSelectedItems: true,
+searchFieldProps: TextFieldProps(
+focusNode: _dropdownFocusNode,
+autofocus: true,
+decoration: InputDecoration(
+hintText: 'Search customer...',
+hintStyle: TextStyle(color: _secondaryTextColor),
+border: OutlineInputBorder(
+borderRadius: BorderRadius.circular(8),
+borderSide: BorderSide(color: _primaryColor.withOpacity(0.3)),
+),
+focusedBorder: OutlineInputBorder(
+borderRadius: BorderRadius.circular(8),
+borderSide: BorderSide(color: _primaryColor),
+),
+),
+style: TextStyle(color: _textColor),
+),
+itemBuilder: (context, item, isSelected) => ListTile(
+title: Text(
+item,
+style: TextStyle(
+color: isSelected ? _primaryColor : _textColor,
+fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+),
+),
+selected: isSelected,
+tileColor: isSelected ? _primaryColor.withOpacity(0.1) : _surfaceColor,
+),
+menuProps: MenuProps(
+backgroundColor: _surfaceColor,
+elevation: 8,
+borderRadius: BorderRadius.circular(12),
+),
+fit: FlexFit.loose,
+constraints: const BoxConstraints(maxHeight: 300),
+),
+dropdownDecoratorProps: DropDownDecoratorProps(
+dropdownSearchDecoration: InputDecoration(
+hintText: 'Select customer',
+hintStyle: TextStyle(color: _secondaryTextColor, fontSize: 14),
+border: InputBorder.none,
+contentPadding: const EdgeInsets.symmetric(vertical: 16),
+),
+baseStyle: TextStyle(color: _textColor, fontSize: 14),
+),
+dropdownBuilder: (context, selectedItem) {
+return Text(
+selectedItem ?? 'Select customer',
+style: TextStyle(
+color: selectedItem != null ? _textColor : _secondaryTextColor,
+fontSize: 14,
+),
+overflow: TextOverflow.ellipsis,
+);
+},
+items: _customersList.map((customer) => customer['name'] as String).toList(),
+selectedItem: _selectedCustomerData?['name'],
+onChanged: (String? value) async {
+if (value == null) return;
+final customerData = _customersList.firstWhere((customer) => customer['name'] == value);
+final customerDoc = await _customers.doc(customerData['id']).get();
+print('Selected customer ID: ${customerData['id']}, Name: ${customerDoc['name']}');
+setState(() {
+_selectedCustomerId = customerData['id'];
+_selectedCustomerData = {
+'id': customerDoc.id,
+'name': customerDoc['name'] ?? 'Unnamed Customer',
+'number': customerDoc['number'] ?? '',
+'address': customerDoc['address'] ?? '',
+'balanceAmount': (customerDoc['balanceAmount'] ?? 0.0).toDouble(),
+'balanceType': customerDoc['balanceType'] ?? 'N/A',
+};
+print('Customer data: $_selectedCustomerData');
+});
+},
+filterFn: (item, filter) => item.toLowerCase().contains(filter.toLowerCase()),
+dropdownButtonProps: DropdownButtonProps(
+icon: Icon(Icons.arrow_drop_down, color: _primaryColor),
+),
+clearButtonProps: ClearButtonProps(
+isVisible: true,
+icon: Icon(Icons.clear, color: _primaryColor),
+onPressed: () {
+setState(() {
+_selectedCustomerId = null;
+_selectedCustomerData = null;
+});
+},
+),
+),
+);
+}
+
+Widget _buildDateFilterChip(String label, DateTime? date, bool isFromDate) {
+return InputChip(
+label: Text(
+date != null ? DateFormat('dd-MM-yyyy').format(date) : label,
+style: TextStyle(
+color: date != null ? _primaryColor : _secondaryTextColor,
+fontWeight: FontWeight.w500,
+),
+),
+backgroundColor: _surfaceColor,
+shape: RoundedRectangleBorder(
+borderRadius: BorderRadius.circular(12),
+side: BorderSide(color: _primaryColor.withOpacity(0.3)),
+),
+onPressed: () => _selectDate(context, isFromDate),
+);
+}
+
+Widget _buildCustomerDetails() {
+if (_selectedCustomerData == null || _selectedCustomerData!.isEmpty) {
+return Center(
+child: Text(
+'Please select a customer',
+style: TextStyle(color: _textColor),
+),
+);
+}
+
+final balanceAmount = (_selectedCustomerData!['balanceAmount'] ?? 0.0).toDouble();
+final balanceType = balanceAmount >= 0 ? 'Dr' : 'Cr'; // Reversed
+
+return Container(
+margin: const EdgeInsets.all(8),
+padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+decoration: BoxDecoration(
+color: _surfaceColor,
+borderRadius: BorderRadius.circular(8),
+boxShadow: [
+BoxShadow(
+color: Colors.black.withOpacity(0.05),
+blurRadius: 4,
+offset: const Offset(0, 2),
+),
+],
+),
+child: Column(
+crossAxisAlignment: CrossAxisAlignment.start,
+mainAxisSize: MainAxisSize.min,
+children: [
+Text(
+'Customer Details',
+style: GoogleFonts.roboto(
+color: _primaryColor,
+fontSize: 14,
+fontWeight: FontWeight.bold,
+),
+),
+const SizedBox(height: 4),
+_buildDetailRow('Name', _selectedCustomerData!['name'] ?? 'N/A'),
+_buildDetailRow('Number', _selectedCustomerData!['number'] ?? 'N/A'),
+_buildDetailRow(
+'Opening Balance',
+'${balanceAmount.toStringAsFixed(2)} ($balanceType)',
+),
+],
+),
+);
+}
+
+Widget _buildDetailRow(String label, String value) {
+return Padding(
+padding: const EdgeInsets.symmetric(vertical: 2),
+child: Row(
+children: [
+SizedBox(
+width: 100,
+child: Text(
+label,
+style: TextStyle(
+fontWeight: FontWeight.w500,
+color: _secondaryTextColor,
+fontSize: 12,
+),
+),
+),
+Expanded(
+child: Text(
+value,
+style: TextStyle(
+color: _textColor,
+fontSize: 12,
+),
+),
+),
+],
+),
+);
+}
+
+Widget _buildTableHeader() {
+return Container(
+height: 56,
+margin: const EdgeInsets.symmetric(horizontal: 24),
+decoration: BoxDecoration(
+color: _primaryColor,
+borderRadius: BorderRadius.circular(12),
+boxShadow: [
+BoxShadow(
+color: Colors.black.withOpacity(0.05),
+blurRadius: 12,
+offset: const Offset(0, 4),
+),
+],
+),
+child: const Padding(
+padding: EdgeInsets.symmetric(horizontal: 12),
+child: Row(
+children: [
+Expanded(child: _HeaderCell('Date')),
+Expanded(child: _HeaderCell('Details')),
+Expanded(child: _HeaderCell('Debit')),
+Expanded(child: _HeaderCell('Credit')),
+Expanded(child: _HeaderCell('Balance')),
+],
+),
+),
+);
+}
+
+Widget _buildTransactionRow(ProcessedTransaction pt) {
+final isInvoice = pt.doc.reference.parent.id == 'invoices';
+
+print('Rendering row for ${pt.doc.id}: Invoice? $isInvoice, Debit: ${pt.debitAmount}, Credit: ${pt.creditAmount}');
+return Container(
+height: 56,
+decoration: BoxDecoration(
+color: _surfaceColor,
+borderRadius: BorderRadius.circular(12),
+boxShadow: [
+BoxShadow(
+color: Colors.black.withOpacity(0.05),
+blurRadius: 8,
+offset: const Offset(0, 4),
+),
+],
+),
+child: Padding(
+padding: const EdgeInsets.symmetric(horizontal: 12),
+child: Row(
+children: [
+Expanded(child: _DataCell(DateFormat('dd-MM-yyyy').format(pt.date))),
+Expanded(
+child: isInvoice
+? GestureDetector(
+onTap: () => _navigateToViewInvoice(pt.doc),
+child: _DataCell(
+'${pt.doc['type']} - Invoice #${pt.doc['invoiceNumber'] ?? 'N/A'}',
+color: _primaryColor,
+),
+)
+    : _DataCell(pt.accountName ?? 'Unknown Account'),
+),
+Expanded(
+child: _DataCell(
+pt.debitAmount > 0 ? '${pt.debitAmount.toStringAsFixed(0)}/-' : '-',
+color: pt.debitAmount > 0 ? Colors.red : _secondaryTextColor,
+),
+),
+Expanded(
+child: _DataCell(
+pt.creditAmount > 0 ? '${pt.creditAmount.toStringAsFixed(0)}/-' : '-',
+color: pt.creditAmount > 0 ? Colors.green : _secondaryTextColor,
+),
+),
+Expanded(
+child: _DataCell(
+'${pt.balance.toStringAsFixed(0)}/-',
+color: pt.balance >= 0 ? Colors.green : Colors.red,
+),
+),
+],
+),
+),
+);
+}
+
+Widget _buildMonthClosingRow(MonthClosing mc) {
+return Container(
+height: 56,
+decoration: BoxDecoration(
+color: _primaryColor,
+borderRadius: BorderRadius.circular(12),
+boxShadow: [
+BoxShadow(
+color: Colors.black.withOpacity(0.05),
+blurRadius: 8,
+offset: const Offset(0, 4),
+),
+],
+),
+child: Padding(
+padding: const EdgeInsets.symmetric(horizontal: 12),
+child: Row(
+children: [
+Expanded(child: _DataCell('Total in')),
+Expanded(child: _DataCell(mc.monthYear, color: Colors.white)),
+Expanded(
+child: _DataCell(
+mc.monthDebit > 0 ? '${mc.monthDebit.toStringAsFixed(0)}/-' : '-',
+color: Colors.white,
+),
+),
+Expanded(
+child: _DataCell(
+mc.monthCredit > 0 ? '${mc.monthCredit.toStringAsFixed(0)}/-' : '-',
+color: Colors.white,
+),
+),
+Expanded(
+child: _DataCell(
+'${mc.closingBalance.toStringAsFixed(0)} (${mc.balanceType})',
+color: Colors.white,
+),
+),
+],
+),
+),
+);
+}
+
+Future<void> _navigateToViewInvoice(DocumentSnapshot invoiceDoc) async {
+try {
+final invoiceId = invoiceDoc.id;
+final invoiceSnapshot = await _invoices.doc(invoiceId).get();
+if (!invoiceSnapshot.exists) {
+_showSnackBar('Invoice not found', Colors.red);
+return;
+}
+
+final invoiceData = invoiceSnapshot.data() as Map<String, dynamic>;
+final invoice = Invoice.fromMap(
+invoiceId,
+invoiceData,
+);
+
+Navigator.push(
+context,
+MaterialPageRoute(
+builder: (context) => PointOfSalePage(invoice: invoice, isReadOnly: true),
+),
+);
+} catch (e) {
+print('Error navigating to view invoice: $e');
+_showSnackBar('Failed to view invoice: $e', Colors.red);
+}
+}
+
+Widget _buildFooter(double totalCredit, double totalDebit,
+double finalBalance, Map<String, AccountTotal> accountTotals) {
+return Container(
+margin: const EdgeInsets.all(24),
+padding: const EdgeInsets.all(24),
+decoration: BoxDecoration(
+color: _surfaceColor,
+borderRadius: BorderRadius.circular(12),
+boxShadow: [
+BoxShadow(
+color: Colors.black.withOpacity(0.05),
+blurRadius: 8,
+offset: const Offset(0, 4),
+),
+],
+),
+child: Column(
+children: [
+if (accountTotals.isNotEmpty) ...[
+...accountTotals.entries.map((entry) => Padding(
+padding: const EdgeInsets.symmetric(vertical: 8.0),
+child: Row(
+mainAxisAlignment: MainAxisAlignment.spaceBetween,
+children: [
+Expanded(
+flex: 2,
+child: Text(
+entry.key,
+style: TextStyle(
+color: _textColor,
+fontSize: 14,
+fontWeight: FontWeight.w500,
+),
+),
+),
+Expanded(
+child: Text(
+'${entry.value.debit.toStringAsFixed(0)}/-',
+textAlign: TextAlign.center,
+style: const TextStyle(
+color: Colors.red,
+fontSize: 14,
+fontWeight: FontWeight.w500,
+),
+),
+),
+Expanded(
+child: Text(
+'${entry.value.credit.toStringAsFixed(0)}/-',
+textAlign: TextAlign.center,
+style: const TextStyle(
+color: Colors.green,
+fontSize: 14,
+fontWeight: FontWeight.w500,
+),
+),
+),
+],
+),
+)),
+const Divider(),
+],
+Row(
+mainAxisAlignment: MainAxisAlignment.spaceBetween,
+children: [
+_buildFooterColumn('Total Debit', totalDebit, Colors.red),
+_buildFooterColumn('Total Credit', totalCredit, Colors.green),
+_buildFooterColumn(
+'Final Balance',
+finalBalance,
+finalBalance >= 0 ? Colors.green : Colors.red,
+),
+],
+),
+],
+),
+);
+}
+
+Widget _buildFooterColumn(String label, double value, Color color) {
+return Column(
+mainAxisSize: MainAxisSize.min,
+children: [
+Text(label, style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
+const SizedBox(height: 4),
+Text(
+label == 'Final Balance'
+? '${value.toStringAsFixed(0)} (${value >= 0 ? "Dr" : "Cr"})' // Reversed
+    : '${value.toStringAsFixed(0)}/-',
+style: TextStyle(
+color: color, fontWeight: FontWeight.bold, fontSize: 14),
+),
+],
+);
+}
+
+void _showSnackBar(String message, Color color) {
+ScaffoldMessenger.of(context).showSnackBar(
+SnackBar(
+content: Text(message),
+backgroundColor: color,
+duration: const Duration(seconds: 3),
+),
+);
+}
+
+@override
+Widget build(BuildContext context) {
+return Focus(
+focusNode: _pageFocusNode,
+onKey: _handleKeyEvent,
+child: Scaffold(
+appBar: AppBar(
+title: Row(
+children: [
+Text('Customer Ledger', style: TextStyle(color: _textColor)),
+const SizedBox(width: 16),
+Expanded(child: _buildCustomerDropdown()),
+const SizedBox(width: 16),
+_buildDateFilterChip('From', _fromDate, true),
+const SizedBox(width: 16),
+_buildDateFilterChip('To', _toDate, false),
+],
+),
+backgroundColor: _backgroundColor,
+elevation: 0,
+iconTheme: IconThemeData(color: _textColor),
+actions: [
+IconButton(
+icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+color: _textColor,
+onPressed: widget.toggleDarkMode,
+),
+],
+),
+backgroundColor: _backgroundColor,
+floatingActionButton: Column(
+mainAxisAlignment: MainAxisAlignment.end,
+children: [
+FloatingActionButton(
+onPressed: () {
+print('Summary button pressed');
+_showSummaryBottomSheet(context);
+},
+backgroundColor: _primaryColor,
+heroTag: 'summary',
+child: const Icon(Icons.info_outline, color: Colors.white),
+),
+const SizedBox(height: 16),
+FloatingActionButton(
+onPressed: () {
+print('Print button pressed in FloatingActionButton');
+_printLedger();
+},
+backgroundColor: _primaryColor,
+heroTag: 'print',
+child: const Icon(Icons.print, color: Colors.white),
+),
+],
+),
+body: Column(
+children: [
+if (_selectedCustomerId != null) ...[
+Padding(
+padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+child: _buildCustomerDetails(),
+),
+Expanded(
+child: StreamBuilder<List<DocumentSnapshot>>(
+stream: _combinedTransactions,
+builder: (context, snapshot) {
+if (snapshot.connectionState == ConnectionState.waiting) {
+return Center(child: CircularProgressIndicator(color: _primaryColor));
+}
+
+if (!snapshot.hasData || snapshot.data!.isEmpty) {
+return Center(
+child: Text('No transactions found',
+style: TextStyle(color: _textColor)),
+);
+}
+
+return FutureBuilder<ProcessedData>(
+future: _processTransactions(snapshot.data!),
+builder: (context, asyncSnapshot) {
+if (asyncSnapshot.connectionState == ConnectionState.waiting) {
+return Center(child: CircularProgressIndicator(color: _primaryColor));
+}
+
+if (asyncSnapshot.hasError) {
+print('Error in FutureBuilder: ${asyncSnapshot.error}');
+return Center(
+child: Text('Error loading transactions',
+style: TextStyle(color: _textColor)),
+);
+}
+
+final data = asyncSnapshot.data!;
+List<dynamic> displayItems = [];
+int transactionIndex = 0;
+int monthClosingIndex = 0;
+
+while (transactionIndex < data.transactions.length ||
+monthClosingIndex < data.monthClosings.length) {
+if (monthClosingIndex >= data.monthClosings.length) {
+displayItems.add(data.transactions[transactionIndex]);
+transactionIndex++;
+continue;
+}
+
+if (transactionIndex >= data.transactions.length) {
+displayItems.add(data.monthClosings[monthClosingIndex]);
+monthClosingIndex++;
+continue;
+}
+
+final transaction = data.transactions[transactionIndex];
+final monthClosing = data.monthClosings[monthClosingIndex];
+final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+if (transactionMonth == monthClosing.monthYear) {
+displayItems.add(transaction);
+transactionIndex++;
+
+if (transactionIndex == data.transactions.length ||
+DateFormat('MMMM yyyy').format(data.transactions[transactionIndex].date) != monthClosing.monthYear) {
+displayItems.add(monthClosing);
+monthClosingIndex++;
+}
+} else {
+final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+if (transactionDate.isAfter(monthClosingDate)) {
+displayItems.add(monthClosing);
+monthClosingIndex++;
+} else {
+displayItems.add(transaction);
+transactionIndex++;
+}
+}
+}
+
+return Column(
+children: [
+_buildTableHeader(),
+const SizedBox(height: 8),
+Expanded(
+child: ListView.separated(
+padding: const EdgeInsets.symmetric(horizontal: 24),
+itemCount: displayItems.length,
+separatorBuilder: (context, index) => const SizedBox(height: 8),
+itemBuilder: (context, index) {
+final item = displayItems[index];
+if (item is ProcessedTransaction) {
+return _buildTransactionRow(item);
+} else if (item is MonthClosing) {
+return _buildMonthClosingRow(item);
+}
+return const SizedBox.shrink();
+},
+),
+),
+],
+);
+},
+);
+},
+),
+),
+],
+],
+),
+),
+);
+}
 }
 
 class _HeaderCell extends StatelessWidget {
-  final String text;
+final String text;
 
-  const _HeaderCell(this.text);
+const _HeaderCell(this.text);
 
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        text,
-        style: const TextStyle(
-            color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
+@override
+Widget build(BuildContext context) {
+return Center(
+child: Text(
+text,
+style: const TextStyle(
+color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+overflow: TextOverflow.ellipsis,
+),
+);
+}
 }
 
 class _DataCell extends StatelessWidget {
-  final dynamic text;
-  final Color? color;
+final dynamic text;
+final Color? color;
 
-  const _DataCell(this.text, {this.color});
+const _DataCell(this.text, {this.color});
 
-  @override
-  Widget build(BuildContext context) {
-    final isDarkMode =
-    (context.findAncestorWidgetOfExactType<CustomerLedgerPage>()!.isDarkMode);
-    return Center(
-      child: text is Widget
-          ? text
-          : Text(
-        text.toString(),
-        style: TextStyle(
-          color: color ??
-              (isDarkMode ? Colors.white : const Color(0xFF2D2D2D)),
-          fontSize: 14,
-        ),
-        overflow: TextOverflow.ellipsis,
-        maxLines: 1,
-      ),
-    );
-  }
+@override
+Widget build(BuildContext context) {
+final isDarkMode =
+(context.findAncestorWidgetOfExactType<CustomerLedgerPage>()!.isDarkMode);
+return Center(
+child: text is Widget
+? text
+    : Text(
+text.toString(),
+style: TextStyle(
+color: color ??
+(isDarkMode ? Colors.white : const Color(0xFF2D2D2D)),
+fontSize: 14,
+),
+overflow: TextOverflow.ellipsis,
+maxLines: 1,
+),
+);
+}
 }

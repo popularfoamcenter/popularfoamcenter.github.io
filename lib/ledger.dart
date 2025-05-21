@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For RawKeyboard
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:dropdown_search/dropdown_search.dart';
-import 'package:printing/printing.dart'; // For printing
-import 'package:pdf/pdf.dart'; // For PDF generation
-import 'package:pdf/widgets.dart' as pw; // PDF widgets
-import 'package:share_plus/share_plus.dart'; // For sharing the PDF
-import 'dart:io'; // For file handling
-import 'package:path_provider/path_provider.dart'; // For temporary file storage
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
-// Import InvoiceViewScreen from the purchase invoice file
-// Adjust the path based on your project structure
-import 'purchaseinvoice.dart'; // Example path, update accordingly
+// Placeholder for InvoiceViewScreen import
+import 'purchaseinvoice.dart';
 
 class ProcessedTransaction {
   final DocumentSnapshot doc;
@@ -23,7 +23,7 @@ class ProcessedTransaction {
   final double debitAmount;
   final double balance;
   final DateTime date;
-  final String? accountName; // Added to store account name for cash transactions
+  final String? accountName;
 
   ProcessedTransaction(this.doc, this.type, this.creditAmount, this.debitAmount,
       this.balance, this.date, {this.accountName});
@@ -37,12 +37,14 @@ class AccountTotal {
 }
 
 class MonthClosing {
-  final String monthYear; // e.g., "October 2023"
+  final String monthYear;
   final double closingBalance;
+  final String balanceType;
   final double monthCredit;
   final double monthDebit;
 
-  MonthClosing(this.monthYear, this.closingBalance, this.monthCredit, this.monthDebit);
+  MonthClosing(this.monthYear, this.closingBalance, this.balanceType,
+      this.monthCredit, this.monthDebit);
 }
 
 class MonthClosingData {
@@ -58,11 +60,13 @@ class ProcessedData {
   final double totalCredit;
   final double totalDebit;
   final double finalBalance;
+  final String finalBalanceType;
   final Map<String, AccountTotal> accountTotals;
-  final List<MonthClosing> monthClosings; // Added for month-wise closings
+  final List<MonthClosing> monthClosings;
 
-  ProcessedData(this.transactions, this.totalCredit, this.totalDebit, this.finalBalance,
-      this.accountTotals, this.monthClosings);
+  ProcessedData(this.transactions, this.totalCredit, this.totalDebit,
+      this.finalBalance, this.finalBalanceType, this.accountTotals,
+      this.monthClosings);
 }
 
 class CompanyLedgerPage extends StatefulWidget {
@@ -96,11 +100,9 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   DateTime? _fromDate;
   DateTime? _toDate;
 
-  // FocusNode for the entire page and dropdown
   final FocusNode _pageFocusNode = FocusNode();
   final FocusNode _dropdownFocusNode = FocusNode();
 
-  // Color Scheme matching the purchase invoice code
   Color get _primaryColor => const Color(0xFF0D6EFD);
   Color get _textColor => widget.isDarkMode ? Colors.white : const Color(0xFF2D2D2D);
   Color get _secondaryTextColor => widget.isDarkMode ? Colors.white70 : const Color(0xFF4A4A4A);
@@ -182,7 +184,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         if (!accountSnapshot.exists) {
           print('Account $accountId for Cash Register ${doc.id} not found.');
           accountName = 'Unknown Account';
-          type = 'Debit'; // Default to Debit if account type is missing
+          type = 'Debit';
         } else {
           final account = accountSnapshot.data() as Map<String, dynamic>;
           accountName = account['name'] ?? 'Unknown Account';
@@ -201,7 +203,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         print('Processed Cash Transaction ${doc.id}: Type: $type, Amount: $amount, Balance: $currentBalance');
       }
 
-      // Update month-wise data
       final monthKey = DateFormat('MMMM yyyy').format(date);
       monthData.update(
         monthKey,
@@ -228,19 +229,20 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       processed.add(ProcessedTransaction(
         doc,
         type,
-        type == 'Credit' ? amount : 0.0,
-        type == 'Debit' ? amount : 0.0,
+        credit,
+        debit,
         currentBalance,
         date,
         accountName: accountName,
       ));
     }
 
-    // Create month closings list
     monthClosings = monthData.entries.map((entry) {
+      final balanceType = entry.value.closingBalance >= 0 ? 'Dr' : 'Cr';
       return MonthClosing(
         entry.key,
         entry.value.closingBalance,
+        balanceType,
         entry.value.credit,
         entry.value.debit,
       );
@@ -252,8 +254,18 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       return aDate.compareTo(bDate);
     });
 
+    final finalBalanceType = currentBalance >= 0 ? 'Dr' : 'Cr';
+
     print('Processed Data: ${processed.length} transactions, Total Credit: $totalCredit, Total Debit: $totalDebit');
-    return ProcessedData(processed, totalCredit, totalDebit, currentBalance, accountTotals, monthClosings);
+    return ProcessedData(
+      processed,
+      totalCredit,
+      totalDebit,
+      currentBalance,
+      finalBalanceType,
+      accountTotals,
+      monthClosings,
+    );
   }
 
   DateTime? _getDate(DocumentSnapshot doc) {
@@ -320,6 +332,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                       data.totalCredit,
                       data.totalDebit,
                       data.finalBalance,
+                      data.finalBalanceType,
                       data.accountTotals,
                     ),
                   );
@@ -359,7 +372,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       final numberFormat = NumberFormat.currency(decimalDigits: 0, symbol: '');
       final Uint8List logoImage = (await rootBundle.load('assets/images/logo1.png')).buffer.asUint8List();
 
-      // Prepare display items (transactions and month closings)
       List<dynamic> displayItems = [];
       int transactionIndex = 0;
       int monthClosingIndex = 0;
@@ -404,7 +416,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         }
       }
 
-      // Build the table rows for transactions and month closings
       final List<pw.TableRow> tableRows = [
         pw.TableRow(
           decoration: pw.BoxDecoration(color: PdfColor.fromHex('#0D6EFD')),
@@ -421,7 +432,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
             child: pw.Text(
               text,
               style: pw.TextStyle(
-                color: PdfColors.white, // Header text remains white for contrast
+                color: PdfColors.white,
                 fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
               ),
@@ -461,7 +472,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   alignment: pw.Alignment.center,
                   child: pw.Text(
                     details,
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
                   ),
                 ),
                 pw.Container(
@@ -469,7 +480,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   alignment: pw.Alignment.center,
                   child: pw.Text(
                     item.creditAmount > 0 ? numberFormat.format(item.creditAmount) : '-',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
                   ),
                 ),
                 pw.Container(
@@ -477,7 +488,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   alignment: pw.Alignment.center,
                   child: pw.Text(
                     item.debitAmount > 0 ? numberFormat.format(item.debitAmount) : '-',
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
                   ),
                 ),
                 pw.Container(
@@ -485,7 +496,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   alignment: pw.Alignment.center,
                   child: pw.Text(
                     numberFormat.format(item.balance),
-                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black), // Changed to black
+                    style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
                   ),
                 ),
               ],
@@ -538,7 +549,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                   padding: const pw.EdgeInsets.all(3),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    '${numberFormat.format(item.closingBalance)} (${item.closingBalance >= 0 ? "Cr" : "Dr"})',
+                    '${numberFormat.format(item.closingBalance)} (${item.balanceType})',
                     style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
                   ),
                 ),
@@ -549,7 +560,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         }),
       ];
 
-      // Build the totals table rows
       final List<pw.TableRow> totalsTableRows = [
         pw.TableRow(children: [
           pw.Container(
@@ -600,7 +610,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
             padding: const pw.EdgeInsets.all(3),
             alignment: pw.Alignment.centerRight,
             child: pw.Text(
-              numberFormat.format(processedData.finalBalance),
+              '${numberFormat.format(processedData.finalBalance)} (${processedData.finalBalanceType})',
               style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
             ),
           ),
@@ -626,12 +636,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                         style: pw.TextStyle(
                           fontSize: 22,
                           fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#0D6EFD'), // Title remains blue
+                          color: PdfColor.fromHex('#0D6EFD'),
                         ),
                       ),
                       pw.SizedBox(height: 6),
                       pw.Text(
-                        'Popular Foam Center',
+                        'Your Company Name',
                         style: pw.TextStyle(
                           fontSize: 15,
                           fontWeight: pw.FontWeight.bold,
@@ -639,7 +649,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                         ),
                       ),
                       pw.Text(
-                        'Zanana Hospital Road, Bahawalpur (63100)',
+                        'Your Company Address',
                         style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
                       ),
                     ],
@@ -681,7 +691,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                       ),
                       pw.SizedBox(height: 6),
                       pw.Text(
-                        'Account Type:',
+                        'Opening Balance:',
                         style: pw.TextStyle(
                           fontWeight: pw.FontWeight.bold,
                           fontSize: 12,
@@ -689,20 +699,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                         ),
                       ),
                       pw.Text(
-                        _openingType ?? 'N/A',
-                        style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
-                      ),
-                      pw.SizedBox(height: 6),
-                      pw.Text(
-                        'Opening Date:',
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 12,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                      pw.Text(
-                        _formatDate(_openingDate),
+                        '${numberFormat.format(_balanceAmount)} (${_balanceAmount >= 0 ? "Dr" : "Cr"})',
                         style: const pw.TextStyle(fontSize: 12, color: PdfColors.black),
                       ),
                     ],
@@ -735,12 +732,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
           build: (context) => [
             pw.Table(
               columnWidths: {
-                0: const pw.FlexColumnWidth(0.8),  // Sr#
-                1: const pw.FlexColumnWidth(1.5),  // Date
-                2: const pw.FlexColumnWidth(3.0),  // Details
-                3: const pw.FlexColumnWidth(1.5),  // Credit
-                4: const pw.FlexColumnWidth(1.5),  // Debit
-                5: const pw.FlexColumnWidth(1.5),  // Balance
+                0: const pw.FlexColumnWidth(0.8),
+                1: const pw.FlexColumnWidth(1.5),
+                2: const pw.FlexColumnWidth(3.0),
+                3: const pw.FlexColumnWidth(1.5),
+                4: const pw.FlexColumnWidth(1.5),
+                5: const pw.FlexColumnWidth(1.5),
               },
               border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
               defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
@@ -793,7 +790,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
                       style: pw.TextStyle(
                         fontSize: 13,
                         fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('#0D6EFD'), // Remains blue as per purchase order
+                        color: PdfColor.fromHex('#0D6EFD'),
                       ),
                     ),
                   ],
@@ -808,7 +805,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
               pw.SizedBox(height: 20),
               pw.Divider(thickness: 0.5, color: PdfColors.black),
               pw.Text(
-                'Contact: 0302-9596046 | FB: Popular Foam Center',
+                'Contact: Your Contact Info | Website: yourwebsite.com',
                 style: pw.TextStyle(fontSize: 10, color: PdfColors.black),
                 textAlign: pw.TextAlign.center,
               ),
@@ -831,7 +828,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
       try {
         final printed = await Printing.layoutPdf(
           onLayout: (PdfPageFormat format) async => pdf.save(),
-          name: 'PFC-LEDGER-${_selectedCompanyId}-${DateTime.now().millisecondsSinceEpoch}-A4',
+          name: 'COMPANY-LEDGER-${_selectedCompanyId}-${DateTime.now().millisecondsSinceEpoch}-A4',
         );
         if (printed) {
           print('Printing successful');
@@ -852,7 +849,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     }
   }
 
-  // Fallback method to save and share the PDF if printing fails
   Future<void> _saveAndSharePdf(pw.Document pdf) async {
     try {
       print('Saving PDF to temporary file...');
@@ -889,7 +885,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
 
   KeyEventResult _handleKeyEvent(FocusNode node, RawKeyEvent event) {
     if (event is RawKeyDownEvent) {
-      print('Key pressed: ${event.logicalKey.keyLabel}'); // Debug log
+      print('Key pressed: ${event.logicalKey.keyLabel}');
       if (event.logicalKey == LogicalKeyboardKey.enter) {
         _showSummaryBottomSheet(context);
         return KeyEventResult.handled;
@@ -917,187 +913,12 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     return KeyEventResult.ignored;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    // Request focus on the page when it loads to ensure keyboard events are captured
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pageFocusNode.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _pageFocusNode.dispose();
-    _dropdownFocusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _pageFocusNode,
-      onKey: _handleKeyEvent,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Row(
-            children: [
-              Text('Company Ledger', style: TextStyle(color: _textColor)),
-              const SizedBox(width: 16),
-              Expanded(child: _buildCompanyDropdown()),
-              const SizedBox(width: 16),
-              _buildDateFilterChip('From', _fromDate, true),
-              const SizedBox(width: 16),
-              _buildDateFilterChip('To', _toDate, false),
-            ],
-          ),
-          backgroundColor: _backgroundColor,
-          elevation: 0,
-          iconTheme: IconThemeData(color: _textColor),
-          actions: [
-            IconButton(
-              icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
-              color: _textColor,
-              onPressed: widget.toggleDarkMode,
-            ),
-          ],
-        ),
-        backgroundColor: _backgroundColor,
-        floatingActionButton: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FloatingActionButton(
-              onPressed: () {
-                print('Summary button pressed');
-                _showSummaryBottomSheet(context);
-              },
-              backgroundColor: _primaryColor,
-              heroTag: 'summary',
-              child: const Icon(Icons.info_outline, color: Colors.white),
-            ),
-            const SizedBox(height: 16),
-            FloatingActionButton(
-              onPressed: () {
-                print('Print button pressed in FloatingActionButton');
-                _printLedger();
-              },
-              backgroundColor: _primaryColor,
-              heroTag: 'print',
-              child: const Icon(Icons.print, color: Colors.white),
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            if (_selectedCompanyId != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                child: _buildOpeningBalanceCard(),
-              ),
-              Expanded(
-                child: StreamBuilder<List<DocumentSnapshot>>(
-                  stream: _combinedTransactions,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator(color: _primaryColor));
-                    }
-
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return Center(
-                        child: Text('No transactions found', style: TextStyle(color: _textColor)),
-                      );
-                    }
-
-                    return FutureBuilder<ProcessedData>(
-                      future: _processTransactions(snapshot.data!),
-                      builder: (context, asyncSnapshot) {
-                        if (asyncSnapshot.connectionState == ConnectionState.waiting) {
-                          return Center(child: CircularProgressIndicator(color: _primaryColor));
-                        }
-
-                        if (asyncSnapshot.hasError) {
-                          print('Error in FutureBuilder: ${asyncSnapshot.error}');
-                          return Center(
-                              child: Text('Error loading transactions',
-                                  style: TextStyle(color: _textColor)));
-                        }
-
-                        final data = asyncSnapshot.data!;
-                        List<dynamic> displayItems = [];
-                        int transactionIndex = 0;
-                        int monthClosingIndex = 0;
-
-                        while (transactionIndex < data.transactions.length ||
-                            monthClosingIndex < data.monthClosings.length) {
-                          if (monthClosingIndex >= data.monthClosings.length) {
-                            displayItems.add(data.transactions[transactionIndex]);
-                            transactionIndex++;
-                            continue;
-                          }
-
-                          if (transactionIndex >= data.transactions.length) {
-                            displayItems.add(data.monthClosings[monthClosingIndex]);
-                            monthClosingIndex++;
-                            continue;
-                          }
-
-                          final transaction = data.transactions[transactionIndex];
-                          final monthClosing = data.monthClosings[monthClosingIndex];
-                          final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
-                          final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
-
-                          if (transactionMonth == monthClosing.monthYear) {
-                            displayItems.add(transaction);
-                            transactionIndex++;
-
-                            if (transactionIndex == data.transactions.length ||
-                                DateFormat('MMMM yyyy').format(data.transactions[transactionIndex].date) !=
-                                    monthClosing.monthYear) {
-                              displayItems.add(monthClosing);
-                              monthClosingIndex++;
-                            }
-                          } else {
-                            final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
-                            if (transactionDate.isAfter(monthClosingDate)) {
-                              displayItems.add(monthClosing);
-                              monthClosingIndex++;
-                            } else {
-                              displayItems.add(transaction);
-                              transactionIndex++;
-                            }
-                          }
-                        }
-
-                        return Column(
-                          children: [
-                            _buildTableHeader(),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: ListView.separated(
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                itemCount: displayItems.length,
-                                separatorBuilder: (context, index) => const SizedBox(height: 8),
-                                itemBuilder: (context, index) {
-                                  final item = displayItems[index];
-                                  if (item is ProcessedTransaction) {
-                                    return _buildTransactionRow(item);
-                                  } else if (item is MonthClosing) {
-                                    return _buildMonthClosingRow(item);
-                                  }
-                                  return const SizedBox.shrink();
-                                },
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ],
-        ),
+  void _showSnackBar(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 3),
       ),
     );
   }
@@ -1133,7 +954,6 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
           return const Text('No companies available');
         }
 
-        // Sort the company list alphabetically by name
         List<DocumentSnapshot> companyList = snapshot.data!.docs;
         companyList.sort((a, b) {
           String nameA = (a['name'] as String).toLowerCase();
@@ -1163,7 +983,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
               showSelectedItems: true,
               searchFieldProps: TextFieldProps(
                 focusNode: _dropdownFocusNode,
-                autofocus: true, // Automatically focus the search field when popup opens
+                autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Search company...',
                   hintStyle: TextStyle(color: _secondaryTextColor),
@@ -1412,10 +1232,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
+              color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
         ],
       ),
       child: Padding(
@@ -1438,7 +1255,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
             ),
             Expanded(
               child: _DataCell(
-                '${mc.closingBalance.toStringAsFixed(0)} (${mc.closingBalance >= 0 ? "Cr" : "Dr"})',
+                '${mc.closingBalance.toStringAsFixed(0)} (${mc.balanceType})',
                 color: Colors.white,
               ),
             ),
@@ -1449,7 +1266,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
   }
 
   Widget _buildFooter(double totalCredit, double totalDebit, double finalBalance,
-      Map<String, AccountTotal> accountTotals) {
+      String finalBalanceType, Map<String, AccountTotal> accountTotals) {
     return Container(
       margin: const EdgeInsets.all(24),
       padding: const EdgeInsets.all(24),
@@ -1504,7 +1321,7 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
               _buildFooterColumn('Total Credit', totalCredit, Colors.green),
               _buildFooterColumn('Total Debit', totalDebit, Colors.red),
               _buildFooterColumn('Final Balance', finalBalance,
-                  finalBalance >= 0 ? Colors.green : Colors.red),
+                  finalBalance >= 0 ? Colors.green : Colors.red, finalBalanceType),
             ],
           ),
         ],
@@ -1512,14 +1329,16 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     );
   }
 
-  Widget _buildFooterColumn(String label, double value, Color color) {
+  Widget _buildFooterColumn(String label, double value, Color color, [String? balanceType]) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(label, style: TextStyle(color: _secondaryTextColor, fontSize: 14)),
         const SizedBox(height: 4),
         Text(
-          '${value.toStringAsFixed(0)}/-',
+          label == 'Final Balance'
+              ? '${value.toStringAsFixed(0)} ($balanceType)'
+              : '${value.toStringAsFixed(0)}/-',
           style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
         ),
       ],
@@ -1537,12 +1356,185 @@ class _CompanyLedgerPageState extends State<CompanyLedgerPage> {
     }
   }
 
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        duration: const Duration(seconds: 3),
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageFocusNode.dispose();
+    _dropdownFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _pageFocusNode,
+      onKey: _handleKeyEvent,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Row(
+            children: [
+              Text('Company Ledger', style: TextStyle(color: _textColor)),
+              const SizedBox(width: 16),
+              Expanded(child: _buildCompanyDropdown()),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('From', _fromDate, true),
+              const SizedBox(width: 16),
+              _buildDateFilterChip('To', _toDate, false),
+            ],
+          ),
+          backgroundColor: _backgroundColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: _textColor),
+          actions: [
+            IconButton(
+              icon: Icon(widget.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+              color: _textColor,
+              onPressed: widget.toggleDarkMode,
+            ),
+          ],
+        ),
+        backgroundColor: _backgroundColor,
+        floatingActionButton: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              onPressed: () {
+                print('Summary button pressed');
+                _showSummaryBottomSheet(context);
+              },
+              backgroundColor: _primaryColor,
+              heroTag: 'summary',
+              child: const Icon(Icons.info_outline, color: Colors.white),
+            ),
+            const SizedBox(height: 16),
+            FloatingActionButton(
+              onPressed: () {
+                print('Print button pressed in FloatingActionButton');
+                _printLedger();
+              },
+              backgroundColor: _primaryColor,
+              heroTag: 'print',
+              child: const Icon(Icons.print, color: Colors.white),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            if (_selectedCompanyId != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: _buildOpeningBalanceCard(),
+              ),
+              Expanded(
+                child: StreamBuilder<List<DocumentSnapshot>>(
+                  stream: _combinedTransactions,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: _primaryColor));
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: Text('No transactions found', style: TextStyle(color: _textColor)),
+                      );
+                    }
+
+                    return FutureBuilder<ProcessedData>(
+                      future: _processTransactions(snapshot.data!),
+                      builder: (context, asyncSnapshot) {
+                        if (asyncSnapshot.connectionState == ConnectionState.waiting) {
+                          return Center(child: CircularProgressIndicator(color: _primaryColor));
+                        }
+
+                        if (asyncSnapshot.hasError) {
+                          print('Error in FutureBuilder: ${asyncSnapshot.error}');
+                          return Center(
+                              child: Text('Error loading transactions',
+                                  style: TextStyle(color: _textColor)));
+                        }
+
+                        final data = asyncSnapshot.data!;
+                        List<dynamic> displayItems = [];
+                        int transactionIndex = 0;
+                        int monthClosingIndex = 0;
+
+                        while (transactionIndex < data.transactions.length ||
+                            monthClosingIndex < data.monthClosings.length) {
+                          if (monthClosingIndex >= data.monthClosings.length) {
+                            displayItems.add(data.transactions[transactionIndex]);
+                            transactionIndex++;
+                            continue;
+                          }
+
+                          if (transactionIndex >= data.transactions.length) {
+                            displayItems.add(data.monthClosings[monthClosingIndex]);
+                            monthClosingIndex++;
+                            continue;
+                          }
+
+                          final transaction = data.transactions[transactionIndex];
+                          final monthClosing = data.monthClosings[monthClosingIndex];
+                          final transactionMonth = DateFormat('MMMM yyyy').format(transaction.date);
+                          final monthClosingDate = DateFormat('MMMM yyyy').parse(monthClosing.monthYear);
+
+                          if (transactionMonth == monthClosing.monthYear) {
+                            displayItems.add(transaction);
+                            transactionIndex++;
+
+                            if (transactionIndex == data.transactions.length ||
+                                DateFormat('MMMM yyyy').format(data.transactions[transactionIndex].date) != monthClosing.monthYear) {
+                              displayItems.add(monthClosing);
+                              monthClosingIndex++;
+                            }
+                          } else {
+                            final transactionDate = DateFormat('MMMM yyyy').parse(transactionMonth);
+                            if (transactionDate.isAfter(monthClosingDate)) {
+                              displayItems.add(monthClosing);
+                              monthClosingIndex++;
+                            } else {
+                              displayItems.add(transaction);
+                              transactionIndex++;
+                            }
+                          }
+                        }
+
+                        return Column(
+                          children: [
+                            _buildTableHeader(),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: ListView.separated(
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                itemCount: displayItems.length,
+                                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final item = displayItems[index];
+                                  if (item is ProcessedTransaction) {
+                                    return _buildTransactionRow(item);
+                                  } else if (item is MonthClosing) {
+                                    return _buildMonthClosingRow(item);
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
