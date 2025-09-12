@@ -37,6 +37,7 @@ class CustomerListPage extends StatefulWidget {
   @override
   _CustomerListPageState createState() => _CustomerListPageState();
 }
+
 class _CustomerListPageState extends State<CustomerListPage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
@@ -213,8 +214,15 @@ class _CustomerListPageState extends State<CustomerListPage> {
           return data['name'].toString().toLowerCase().contains(_searchQuery);
         }).toList();
 
+        // Sort customers alphabetically by name (case-insensitive)
+        customers.sort((a, b) {
+          final aName = (a.data() as Map<String, dynamic>)['name']?.toString().toLowerCase() ?? '';
+          final bName = (b.data() as Map<String, dynamic>)['name']?.toString().toLowerCase() ?? '';
+          return aName.compareTo(bName);
+        });
+
         return ListView.separated(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemCount: customers.length,
           itemBuilder: (context, index) => _buildCustomerItem(customers[index], isDesktop: isDesktop),
@@ -368,7 +376,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // Customer Name
                 Text(
                   'Customer Name',
                   style: TextStyle(
@@ -385,7 +392,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
                   validator: (value) => value!.isEmpty ? 'Required field' : null,
                 ),
                 const SizedBox(height: 16),
-                // Contact Number
                 Text(
                   'Contact Number',
                   style: TextStyle(
@@ -403,7 +409,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
                   validator: (value) => value!.isEmpty ? 'Required field' : null,
                 ),
                 const SizedBox(height: 16),
-                // Address
                 Text(
                   'Address (Optional)',
                   style: TextStyle(
@@ -419,7 +424,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
                   style: TextStyle(color: _textColor, fontSize: 14),
                 ),
                 const SizedBox(height: 16),
-                // Balance Type
                 Text(
                   'Balance Type',
                   style: TextStyle(
@@ -443,7 +447,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
                   onChanged: (value) => balanceType = value!,
                 ),
                 const SizedBox(height: 16),
-                // Balance Amount
                 Text(
                   'Balance Amount',
                   style: TextStyle(
@@ -461,7 +464,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
                   validator: (value) => value!.isEmpty ? 'Required field' : null,
                 ),
                 const SizedBox(height: 24),
-                // Save Button
                 ElevatedButton(
                   onPressed: () async {
                     if (nameController.text.isNotEmpty &&
@@ -502,8 +504,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
       String number,
       String address,
       String balanceType,
-      double balanceAmount,
-      ) async {
+      double balanceAmount) async {
     try {
       await _firestore.collection('customers').doc(id).update({
         'name': name,
@@ -542,27 +543,18 @@ class _CustomerListPageState extends State<CustomerListPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Delete Customer',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: _textColor)),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor)),
               const SizedBox(height: 16),
               Text('Are you sure you want to delete this customer? This action cannot be undone.',
-                  style: TextStyle(
-                      fontSize: 14,
-                      color: _secondaryTextColor)),
+                  style: TextStyle(fontSize: 14, color: _secondaryTextColor)),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
-                    child: Text('CANCEL',
-                        style: TextStyle(
-                            color: _secondaryTextColor,
-                            fontWeight: FontWeight.w600)),
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                    child: Text('CANCEL', style: TextStyle(color: _secondaryTextColor, fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
@@ -570,12 +562,8 @@ class _CustomerListPageState extends State<CustomerListPage> {
                     style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.red,
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    child: const Text('DELETE',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: const Text('DELETE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
@@ -801,8 +789,25 @@ class _CustomerDiscountsPageState extends State<CustomerDiscountsPage> {
               data['item'].toString().toLowerCase().contains(_searchQuery);
         }).toList();
 
+        // Sort discounts alphabetically by qualityName and then by item (case-insensitive)
+        discounts.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          String aQuality = aData['qualityName']?.toString().toLowerCase() ?? '';
+          String bQuality = bData['qualityName']?.toString().toLowerCase() ?? '';
+          int qualityCompare = aQuality.compareTo(bQuality);
+
+          if (qualityCompare == 0) {
+            String aItem = aData['item']?.toString().toLowerCase() ?? '';
+            String bItem = bData['item']?.toString().toLowerCase() ?? '';
+            return aItem.compareTo(bItem);
+          }
+
+          return qualityCompare;
+        });
+
         return ListView.separated(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemCount: discounts.length,
           itemBuilder: (context, index) => _buildDiscountItem(
@@ -837,14 +842,9 @@ class _CustomerDiscountsPageState extends State<CustomerDiscountsPage> {
             Expanded(child: _DataCell(discount['qualityName'] ?? '')),
             Expanded(child: _DataCell(discount['item'] ?? '')),
             Expanded(child: _DataCell(discount['type'] ?? '')),
-            Expanded(child: _DataCell(
-              discount['type'] == 'Discount'
-                  ? '${discount['covered']}% / ${discount['uncovered']}%'
-                  : '-',
-            )),
-            Expanded(child: _DataCell(
-              discount['type'] == 'Price' ? '${discount['amount']}' : '-',
-            )),
+            Expanded(
+                child: _DataCell(discount['type'] == 'Discount' ? '${discount['covered']}% / ${discount['uncovered']}%' : '-')),
+            Expanded(child: _DataCell(discount['type'] == 'Price' ? '${discount['amount']}' : '-')),
             Expanded(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -882,16 +882,8 @@ class _CustomerDiscountsPageState extends State<CustomerDiscountsPage> {
             _DataCell(discount['qualityName'] ?? '', 200),
             _DataCell(discount['item'] ?? '', 150),
             _DataCell(discount['type'] ?? '', 150),
-            _DataCell(
-                discount['type'] == 'Discount'
-                    ? '${discount['covered']}% / ${discount['uncovered']}%'
-                    : '-',
-                200
-            ),
-            _DataCell(
-                discount['type'] == 'Price' ? '${discount['amount']}' : '-',
-                150
-            ),
+            _DataCell(discount['type'] == 'Discount' ? '${discount['covered']}% / ${discount['uncovered']}%' : '-', 200),
+            _DataCell(discount['type'] == 'Price' ? '${discount['amount']}' : '-', 150),
             SizedBox(
               width: 200,
               child: Row(
@@ -989,18 +981,13 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
   void _loadQualities() async {
     final snapshot = await _firestore.collection('items').get();
     setState(() {
-      _qualities = snapshot.docs
-          .map((doc) => doc['qualityName'].toString())
-          .toSet()
-          .toList();
+      _qualities = snapshot.docs.map((doc) => doc['qualityName'].toString()).toSet().toList();
     });
   }
 
   void _loadItems(String quality) async {
-    final snapshot = await _firestore
-        .collection('items')
-        .where('qualityName', isEqualTo: quality)
-        .get();
+    final snapshot =
+    await _firestore.collection('items').where('qualityName', isEqualTo: quality).get();
     setState(() => _items = snapshot.docs.map((doc) => doc.data()).toList());
   }
 
@@ -1052,10 +1039,7 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text('Discount for ${widget.customerName}',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: widget.textColor)),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: widget.textColor)),
                   const SizedBox(height: 20),
                   _buildQualityDropdown(),
                   const SizedBox(height: 16),
@@ -1083,16 +1067,17 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
     );
   }
 
-
   Widget _buildQualityDropdown() {
     return DropdownButtonFormField<String>(
       value: _selectedQuality,
       decoration: _inputDecoration('Quality'),
       dropdownColor: Colors.white,
-      items: _qualities.map((quality) => DropdownMenuItem<String>(
+      items: _qualities
+          .map((quality) => DropdownMenuItem<String>(
         value: quality,
         child: Text(quality, style: TextStyle(fontSize: 14, color: widget.textColor)),
-      )).toList(),
+      ))
+          .toList(),
       onChanged: (value) {
         setState(() {
           _selectedQuality = value;
@@ -1111,10 +1096,7 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Discount Type',
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: widget.textColor)),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: widget.textColor)),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -1124,8 +1106,8 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
           child: isDesktop
               ? Row(
             children: [
-              Expanded(child: _buildPercentageRadio()), // Add Expanded
-              Expanded(child: _buildFixedRadio()), // Add Expanded
+              Expanded(child: _buildPercentageRadio()),
+              Expanded(child: _buildFixedRadio()),
             ],
           )
               : Column(
@@ -1138,10 +1120,10 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
       ],
     );
   }
+
   Widget _buildPercentageRadio() {
     return RadioListTile<String>(
-      title: Text('Percentage',
-          style: TextStyle(fontSize: 14, color: widget.textColor)),
+      title: Text('Percentage', style: TextStyle(fontSize: 14, color: widget.textColor)),
       value: 'Discount',
       groupValue: _discountType,
       activeColor: widget.primaryColor,
@@ -1151,14 +1133,14 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
 
   Widget _buildFixedRadio() {
     return RadioListTile<String>(
-      title: Text('Fixed Amount',
-          style: TextStyle(fontSize: 14, color: widget.textColor)),
+      title: Text('Fixed Amount', style: TextStyle(fontSize: 14, color: widget.textColor)),
       value: 'Price',
       groupValue: _discountType,
       activeColor: widget.primaryColor,
       onChanged: (value) => setState(() => _discountType = value!),
     );
   }
+
   Widget _buildItemSelection() {
     final bool isDesktop = MediaQuery.of(context).size.width >= 600;
 
@@ -1182,8 +1164,8 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
           child: isDesktop
               ? Row(
             children: [
-              Expanded(child: _buildAllRadio()), // Add Expanded
-              Expanded(child: _buildSpecificRadio()), // Add Expanded
+              Expanded(child: _buildAllRadio()),
+              Expanded(child: _buildSpecificRadio()),
             ],
           )
               : Column(
@@ -1210,9 +1192,7 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
                 );
               }).toList(),
               onChanged: (value) => setState(() => _selectedItem = value),
-              validator: (value) => _itemSelection == 'Specific' && value == null
-                  ? 'Select item'
-                  : null,
+              validator: (value) => _itemSelection == 'Specific' && value == null ? 'Select item' : null,
             ),
           ),
       ],
@@ -1221,8 +1201,7 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
 
   Widget _buildAllRadio() {
     return RadioListTile<String>(
-      title: Text('All Items',
-          style: TextStyle(fontSize: 14, color: widget.textColor)),
+      title: Text('All Items', style: TextStyle(fontSize: 14, color: widget.textColor)),
       value: 'All',
       groupValue: _itemSelection,
       activeColor: widget.primaryColor,
@@ -1232,15 +1211,13 @@ class _DiscountFormDialogState extends State<DiscountFormDialog> {
 
   Widget _buildSpecificRadio() {
     return RadioListTile<String>(
-      title: Text('Specific Item',
-          style: TextStyle(fontSize: 14, color: widget.textColor)),
+      title: Text('Specific Item', style: TextStyle(fontSize: 14, color: widget.textColor)),
       value: 'Specific',
       groupValue: _itemSelection,
       activeColor: widget.primaryColor,
       onChanged: (value) => setState(() => _itemSelection = value!),
     );
   }
-
 
   Widget _buildDiscountFields() {
     return _discountType == 'Discount'
@@ -1355,10 +1332,7 @@ class _AddCustomerPageState extends State<AddCustomerPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title,
-              style: TextStyle(
-                  color: _primaryColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600)),
+              style: TextStyle(color: _primaryColor, fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -1371,10 +1345,7 @@ class _AddCustomerPageState extends State<AddCustomerPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: TextStyle(
-                color: _textColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+            style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -1392,10 +1363,7 @@ class _AddCustomerPageState extends State<AddCustomerPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: TextStyle(
-                color: _textColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+            style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -1419,20 +1387,19 @@ class _AddCustomerPageState extends State<AddCustomerPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: TextStyle(
-                color: _textColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
+            style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: value,
           decoration: _inputDecoration('Select $label'),
           dropdownColor: _surfaceColor,
           style: TextStyle(color: _textColor, fontSize: 14),
-          items: items.map((item) => DropdownMenuItem<String>(
+          items: items
+              .map((item) => DropdownMenuItem<String>(
             value: item,
             child: Text(item, style: TextStyle(color: _textColor)),
-          )).toList(),
+          ))
+              .toList(),
           onChanged: onChanged,
         ),
         const SizedBox(height: 16),

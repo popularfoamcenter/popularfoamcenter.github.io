@@ -50,7 +50,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
         'entity_type': entityType,
         'entity_id': entityId,
         'account_id': accountId,
-        'amount': amount.toDouble(), // Explicit conversion
+        'amount': amount.toDouble(),
         'comments': comment.trim(),
         'created_at': FieldValue.serverTimestamp(),
       });
@@ -64,7 +64,6 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
       );
     }
   }
-
 
   Future<void> _updateCashRegister(
       String docId,
@@ -81,7 +80,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
         'entity_type': entityType,
         'entity_id': entityId,
         'account_id': accountId,
-        'amount': amount.toDouble(), // Explicit conversion
+        'amount': amount.toDouble(),
         'comments': comment.trim(),
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -212,7 +211,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
         child: Row(
           children: [
             Expanded(child: _HeaderText('ID')),
-            Expanded(child: _HeaderText('Date')),
+            Expanded(child: _HeaderText('Date ↓')), // Indicates newest first sorting
             Expanded(child: _HeaderText('Name')),
             Expanded(child: _HeaderText('Account')),
             Expanded(child: _HeaderText('Amount')),
@@ -225,7 +224,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
 
   Widget _buildCashRegisterList() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _cashRegisters.orderBy('created_at', descending: true).snapshots(),
+      stream: _cashRegisters.orderBy('date', descending: true).snapshots(), // Sorts by newest first
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator(color: _primaryColor));
@@ -258,7 +257,7 @@ class _CashRegisterPageState extends State<CashRegisterPage> {
 
   Widget _buildRegisterRow(DocumentSnapshot register) {
     final date = (register['date'] as Timestamp?)?.toDate();
-    final formattedDate = date != null ? DateFormat('MMM dd, yyyy').format(date) : 'N/A';
+    final formattedDate = date != null ? DateFormat('dd-MM-yyyy').format(date) : 'N/A';
     final entityType = register['entity_type'] as String?;
     final entityId = register['entity_id'] as String?;
     final accountId = register['account_id'] as String?;
@@ -444,7 +443,7 @@ class HorizontalMargin extends StatelessWidget {
   }
 }
 
-  class AddCashRegisterForm extends StatefulWidget {
+class AddCashRegisterForm extends StatefulWidget {
   final QuerySnapshot companies;
   final QuerySnapshot customers;
   final QuerySnapshot accounts;
@@ -525,7 +524,7 @@ class _AddCashRegisterFormState extends State<AddCashRegisterForm> {
               if (pickedDate != null) {
                 setState(() {
                   _selectedDate = pickedDate;
-                  _dateController.text = DateFormat('MMM dd, yyyy').format(pickedDate);
+                  _dateController.text = DateFormat('dd-MM-yyyy').format(pickedDate);
                 });
               }
             },
@@ -585,7 +584,6 @@ class _AddCashRegisterFormState extends State<AddCashRegisterForm> {
             maxLines: 2,
           ),
           const SizedBox(height: 24),
-          // Modified save handler
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: widget.primaryColor,
@@ -686,14 +684,11 @@ class _EditCashRegisterFormState extends State<EditCashRegisterForm> {
     super.initState();
     _dateController = TextEditingController(
         text: widget.initialDate != null
-            ? DateFormat('MMM dd, yyyy').format(widget.initialDate!)
+            ? DateFormat('dd-MM-yyyy').format(widget.initialDate!)
             : ''
     );
-
-    // Proper type handling for numeric values
     final amountValue = (widget.register['amount'] as num?)?.toDouble() ?? 0.0;
     _amountController = TextEditingController(text: amountValue.toString());
-
     _commentController = TextEditingController(text: widget.initialComment);
 
     _selectedEntityType = widget.initialEntityType;
@@ -747,7 +742,7 @@ class _EditCashRegisterFormState extends State<EditCashRegisterForm> {
               if (pickedDate != null) {
                 setState(() {
                   _selectedDate = pickedDate;
-                  _dateController.text = DateFormat('MMM dd, yyyy').format(pickedDate);
+                  _dateController.text = DateFormat('dd-MM-yyyy').format(pickedDate);
                 });
               }
             },

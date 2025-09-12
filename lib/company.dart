@@ -79,48 +79,47 @@ class _CompanyPageState extends State<CompanyPage> {
           key: _formKey,
           child: Column(
             children: [
-            _buildFormSection('Company Details', [
-            _buildTextFormField('Company Name', _nameController),
-            _buildTextFormField('Party ID', _partyIdController),
-            _buildTextFormField('Party Name', _partyNameController),
-            const SizedBox(height: 16),
-              isDesktop
-                  ? Row(
-                children: [
-                  Expanded(
-                    child: _buildBalanceTypeDropdown(
+              _buildFormSection('Company Details', [
+                _buildTextFormField('Company Name', _nameController),
+                _buildTextFormField('Party ID', _partyIdController),
+                _buildTextFormField('Party Name', _partyNameController),
+                const SizedBox(height: 16),
+                isDesktop
+                    ? Row(
+                  children: [
+                    Expanded(
+                      child: _buildBalanceTypeDropdown(
+                        _balanceType,
+                            (value) => setState(() => _balanceType = value),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _buildDatePicker('Balance Date', _balanceDateController, context),
+                    ),
+                  ],
+                )
+                    : Column(
+                  children: [
+                    _buildBalanceTypeDropdown(
                       _balanceType,
                           (value) => setState(() => _balanceType = value),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildDatePicker('Balance Date', _balanceDateController, context),
-                  ),
-                ],
-              )
-                  : Column(
-                children: [
-                  _buildBalanceTypeDropdown(
-                    _balanceType,
-                        (value) => setState(() => _balanceType = value),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildDatePicker('Balance Date', _balanceDateController, context),
-                ],
-              ),
-                  _buildTextFormField('Balance Amount', _balanceAmountController, isNumeric: true),
-                  _buildTextFormField('Balance Limit', _balanceLimitController, isNumeric: true),
-                ]),
-            const SizedBox(height: 24),
-            _buildSaveButton(_submitForm),
-          ],
+                    const SizedBox(height: 16),
+                    _buildDatePicker('Balance Date', _balanceDateController, context),
+                  ],
+                ),
+                _buildTextFormField('Balance Amount', _balanceAmountController, isNumeric: true),
+                _buildTextFormField('Balance Limit', _balanceLimitController, isNumeric: true),
+              ]),
+              const SizedBox(height: 24),
+              _buildSaveButton(_submitForm),
+            ],
           ),
         ),
       ),
     );
   }
-
 
   Widget _buildFormSection(String title, List<Widget> children) {
     return Container(
@@ -134,11 +133,8 @@ class _CompanyPageState extends State<CompanyPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(
-              color: _primaryColor,
-              fontSize: 16,
-              fontWeight: FontWeight.w600
-          )),
+          Text(title,
+              style: const TextStyle(color: _primaryColor, fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -150,11 +146,8 @@ class _CompanyPageState extends State<CompanyPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(
-            color: _textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w500
-        )),
+        Text(label,
+            style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -188,11 +181,8 @@ class _CompanyPageState extends State<CompanyPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(
-            color: _textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w500
-        )),
+        Text(label,
+            style: const TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -205,12 +195,12 @@ class _CompanyPageState extends State<CompanyPage> {
               lastDate: DateTime(2101),
             );
             if (pickedDate != null) {
-              controller.text = '${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}';
+              controller.text =
+              '${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}';
             }
           },
-          decoration: _inputDecoration(label).copyWith(
-            suffixIcon: const Icon(Icons.calendar_today, color: _secondaryTextColor),
-          ),
+          decoration: _inputDecoration(label)
+              .copyWith(suffixIcon: const Icon(Icons.calendar_today, color: _secondaryTextColor)),
         ),
       ],
     );
@@ -224,16 +214,13 @@ class _CompanyPageState extends State<CompanyPage> {
         label: const Text('SAVE COMPANY', style: TextStyle(fontSize: 14, color: _surfaceColor)),
         style: ElevatedButton.styleFrom(
           backgroundColor: _primaryColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
         onPressed: () => onPressed(),
       ),
     );
   }
-
 
   InputDecoration _inputDecoration(String label) {
     return InputDecoration(
@@ -292,19 +279,12 @@ class _CompanyListPageState extends State<CompanyListPage> {
             children: [
               const Text(
                 'Confirm Delete',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: _textColor,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textColor),
               ),
               const SizedBox(height: 20),
               const Text(
                 'Are you sure you want to delete this company?',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: _secondaryTextColor,
-                ),
+                style: TextStyle(fontSize: 14, color: _secondaryTextColor),
               ),
               const SizedBox(height: 24),
               Row(
@@ -314,16 +294,11 @@ class _CompanyListPageState extends State<CompanyListPage> {
                     onPressed: () => Navigator.pop(context, false),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: const Text(
                       'Cancel',
-                      style: TextStyle(
-                        color: _secondaryTextColor,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: _secondaryTextColor, fontSize: 14),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -332,16 +307,11 @@ class _CompanyListPageState extends State<CompanyListPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: const Text(
                       'Delete',
-                      style: TextStyle(
-                        color: _surfaceColor,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: _surfaceColor, fontSize: 14),
                     ),
                   ),
                 ],
@@ -420,13 +390,20 @@ class _CompanyListPageState extends State<CompanyListPage> {
           return Center(child: Text('No companies found', style: const TextStyle(color: _textColor)));
         }
 
+        // Sort companies alphabetically by name (case-insensitive)
+        companies.sort((a, b) {
+          final aName = a['name'].toString().toLowerCase();
+          final bName = b['name'].toString().toLowerCase();
+          return aName.compareTo(bName);
+        });
+
         return Column(
           children: [
             _buildDesktopHeader(),
             const SizedBox(height: 8),
             Expanded(
               child: ListView.separated(
-                padding: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemCount: companies.length,
                 itemBuilder: (context, index) => _buildDesktopRow(companies[index]),
@@ -458,7 +435,8 @@ class _CompanyListPageState extends State<CompanyListPage> {
                       return Center(child: CircularProgressIndicator(color: _primaryColor));
                     }
                     if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
+                      return Center(
+                          child: Text('Error: ${snapshot.error}', style: const TextStyle(color: _textColor)));
                     }
 
                     final companies = snapshot.data?.docs.where((doc) {
@@ -468,12 +446,20 @@ class _CompanyListPageState extends State<CompanyListPage> {
                     }).toList();
 
                     if (companies == null || companies.isEmpty) {
-                      return Center(child: Text('No companies found', style: const TextStyle(color: _textColor)));
+                      return Center(
+                          child: Text('No companies found', style: const TextStyle(color: _textColor)));
                     }
+
+                    // Sort companies alphabetically by name (case-insensitive)
+                    companies.sort((a, b) {
+                      final aName = a['name'].toString().toLowerCase();
+                      final bName = b['name'].toString().toLowerCase();
+                      return aName.compareTo(bName);
+                    });
 
                     return ListView.separated(
                       physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemCount: companies.length,
                       itemBuilder: (context, index) => _buildMobileRow(companies[index]),
@@ -556,12 +542,13 @@ class _CompanyListPageState extends State<CompanyListPage> {
             Expanded(child: _DataCell(company['balance_type'] ?? 'N/A')),
             Expanded(child: _DataCell(company['balance_amount'].toString())),
             Expanded(child: _DataCell(company['balance_limit'].toString())),
-            Expanded(child: _ActionCell(
-              company,
-              150,
-              onEdit: (company) => _showEditDialog(company),
-              onDelete: (id) => _deleteCompany(id),
-            )),
+            Expanded(
+                child: _ActionCell(
+                  company,
+                  150,
+                  onEdit: (company) => _showEditDialog(company),
+                  onDelete: (id) => _deleteCompany(id),
+                )),
           ],
         ),
       ),
@@ -636,9 +623,7 @@ class _CompanyListPageState extends State<CompanyListPage> {
         label: const Text('Add Company', style: TextStyle(fontSize: 14, color: _surfaceColor)),
         style: ElevatedButton.styleFrom(
           backgroundColor: _primaryColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CompanyPage())),
@@ -749,10 +734,7 @@ class _CompanyListPageState extends State<CompanyListPage> {
                   }
 
                   try {
-                    await FirebaseFirestore.instance
-                        .collection('companies')
-                        .doc(company.id)
-                        .update({
+                    await FirebaseFirestore.instance.collection('companies').doc(company.id).update({
                       'name': nameController.text,
                       'party_id': partyIdController.text,
                       'party_name': partyNameController.text,
@@ -846,11 +828,7 @@ class _HeaderCell extends StatelessWidget {
       child: Center(
         child: Text(
           text,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -886,12 +864,7 @@ class _ActionCell extends StatelessWidget {
   final Function(DocumentSnapshot) onEdit;
   final Function(String) onDelete;
 
-  const _ActionCell(
-      this.company,
-      this.width, {
-        required this.onEdit,
-        required this.onDelete,
-      });
+  const _ActionCell(this.company, this.width, {required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
